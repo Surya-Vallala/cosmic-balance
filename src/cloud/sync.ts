@@ -9,6 +9,7 @@ export interface PersonRow {
   user_id: string | null;
   name: string;
   upi_id: string | null;
+  email?: string | null;
   created_by: string | null;
   created_at: string;
 }
@@ -57,11 +58,15 @@ export interface Rows {
   transfers: TransferRow[];
 }
 
+export function personFromRow(p: PersonRow): Person {
+  return { id: p.id, name: p.name, upiId: p.upi_id ?? undefined, userId: p.user_id, email: p.email ?? null };
+}
+
 /** Build the app's state from everything the signed-in person can see. */
 export function rowsToState(rows: Rows, meId: Id): AppState {
   const people: Record<Id, Person> = {};
   for (const p of rows.people) {
-    people[p.id] = { id: p.id, name: p.name, upiId: p.upi_id ?? undefined, userId: p.user_id };
+    people[p.id] = personFromRow(p);
   }
   const groups: Group[] = [...rows.groups]
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
@@ -158,6 +163,7 @@ export function deriveActivity(rows: Rows, s: AppState): Activity[] {
 // Writes
 
 export type Op =
+  | { kind: 'rpc'; fn: string; args: Record<string, unknown> }
   | { table: string; kind: 'insert'; values: Record<string, unknown> | Record<string, unknown>[] }
   | { table: string; kind: 'upsert'; values: Record<string, unknown> }
   | { table: string; kind: 'update'; id: string; values: Record<string, unknown>; failMessage: string }
@@ -168,6 +174,7 @@ export type WriteAction =
   | { type: 'savePerson'; person: Person }
   | { type: 'saveGroup'; group: Group }
   | { type: 'deleteGroup'; id: Id }
+  | { type: 'leaveGroup'; id: Id }
   | { type: 'saveExpense'; expense: Expense }
   | { type: 'deleteExpense'; id: Id }
   | { type: 'addPayment'; payment: Payment }
@@ -203,26 +210,35 @@ export function actionToOps(action: WriteAction, before: AppState): Op[] {
       const g: Group = a.group;
       const values = {
         name: g.name,
-        member_ids: g.memberIds,
         simplify_debts: g.simplifyDebts,
         base_currency: g.baseCurrency,
         rates: g.rates,
       };
-      if (before.groups.some((x) => x.id === g.id)) {
-        return [
-          {
-            table: 'groups',
-            kind: 'update',
-            id: g.id,
-            values: { ...values, updated_at: new Date().toISOString() },
-            failMessage: "Couldn't save the group. You may no longer be a member.",
-          },
-        ];
+      const old = before.groups.find((x) => x.id === g.id);
+      if (!old) return [{ table: 'groups', kind: 'insert', values: { id: g.id, ...values, member_ids: g.memberIds } }];
+      const ops: Op[] = [
+        {
+          table: 'groups',
+          kind: 'update',
+          id: g.id,
+          values: { ...values, updated_at: new Date().toISOString() },
+          failMessage: "Couldn't save the group. You may no longer be a member.",
+        },
+      ];
+      // Members change as additions and removals against the group as it is in
+      // the database now, so someone who joined meanwhile isn't dropped.
+      const add = g.memberIds.filter((id) => !old.memberIds.includes(id));
+      const remove = old.memberIds.filter((id) => !g.memberIds.includes(id));
+      if (add.length || remove.length) {
+        ops.push({ kind: 'rpc', fn: 'set_group_members', args: { p_group: g.id, p_add: add, p_remove: remove } });
       }
-      return [{ table: 'groups', kind: 'insert', values: { id: g.id, ...values } }];
+      return ops;
     }
     case 'deleteGroup':
       return [{ table: 'groups', kind: 'delete', id: a.id, failMessage: 'Only the person who created this group can delete it.' }];
+    case 'leaveGroup':
+      if (!before.meId) return [];
+      return [{ kind: 'rpc', fn: 'set_group_members', args: { p_group: a.id, p_add: [], p_remove: [before.meId] } }];
     case 'saveExpense': {
       const e: Expense = a.expense;
       return [{ table: 'expenses', kind: 'upsert', values: { id: e.id, group_id: e.groupId, data: e, updated_at: new Date().toISOString() } }];

@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../auth';
+import { isEmail } from '../emails';
 import { exportCsv } from '../export';
 import type { ScreenProps } from '../navigation';
 import { uid, useStore } from '../store';
@@ -10,7 +11,7 @@ import { Avatar, Button, ConfirmButton, Field, List, Row, Screen, SectionTitle, 
 const UPI_PATTERN = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$/;
 
 export default function FriendFormScreen({ navigation, route }: ScreenProps<'FriendForm'>) {
-  const { state, dispatch, mode, email } = useStore();
+  const { state, dispatch, mode, email, addPersonByEmail, setPersonEmail, unsaved } = useStore();
   const { signOut, backToWelcome } = useAuth();
   const existing = route.params.personId ? state.people[route.params.personId] : undefined;
   const isMe = existing?.id === state.meId;
@@ -21,6 +22,11 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
   const [upi, setUpi] = useState(existing?.upiId ?? '');
   const [touched, setTouched] = useState(false);
   const [exported, setExported] = useState<string | null>(null);
+  // Shared mode: a friend's Gmail links them to their account.
+  const showGmail = mode === 'cloud' && !isMe && !existing?.userId;
+  const [gmail, setGmail] = useState(existing?.email ?? '');
+  const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -29,16 +35,55 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
   }, [navigation, existing, isMe, readOnly]);
 
   const upiTrim = upi.trim();
-  const nameError = touched && !name.trim() ? 'Enter a name.' : null;
+  const gmailTrim = showGmail ? gmail.trim() : '';
+  const nameMissing = !name.trim() && !(showGmail && !existing && gmailTrim);
+  const nameError = touched && nameMissing ? 'Enter a name.' : null;
   const upiError = touched && upiTrim && !UPI_PATTERN.test(upiTrim) ? 'A UPI ID looks like name@bank, for example ravi@okaxis.' : null;
+  const gmailError = touched && gmailTrim && !isEmail(gmailTrim) ? 'An email address looks like name@gmail.com.' : null;
 
-  const save = () => {
+  const save = async () => {
     setTouched(true);
-    if (!name.trim() || (upiTrim && !UPI_PATTERN.test(upiTrim))) return;
-    dispatch({
-      type: 'savePerson',
-      person: { ...(existing ?? {}), id: existing?.id ?? uid(), name: name.trim(), upiId: upiTrim || undefined },
-    });
+    setSaveError(null);
+    if (nameMissing || (upiTrim && !UPI_PATTERN.test(upiTrim)) || (gmailTrim && !isEmail(gmailTrim))) return;
+
+    // New friend with a Gmail: their account if they have one, else linked when they sign in.
+    if (showGmail && !existing && gmailTrim) {
+      setBusy(true);
+      try {
+        const p = await addPersonByEmail(gmailTrim, name.trim() || undefined);
+        if (upiTrim && !p.userId && !p.upiId) dispatch({ type: 'savePerson', person: { ...p, upiId: upiTrim } });
+        navigation.goBack();
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : 'Couldn’t add them. Try again.');
+        setBusy(false);
+      }
+      return;
+    }
+
+    const id = existing?.id ?? uid();
+    const changed = !existing || existing.name !== name.trim() || (existing.upiId ?? '') !== upiTrim;
+    if (changed) {
+      dispatch({
+        type: 'savePerson',
+        person: { ...(existing ?? {}), id, name: name.trim(), upiId: upiTrim || undefined },
+      });
+    }
+    if (showGmail && existing && gmailTrim !== (existing.email ?? '')) {
+      setBusy(true);
+      try {
+        const now = await setPersonEmail(existing.id, gmailTrim);
+        if (now !== existing.id) {
+          // They already had an account: everything recorded for this name is now theirs.
+          navigation.popToTop();
+          navigation.navigate('Friend', { friendId: now });
+          return;
+        }
+      } catch (e) {
+        setSaveError(e instanceof Error ? e.message : 'Couldn’t save the email. Try again.');
+        setBusy(false);
+        return;
+      }
+    }
     navigation.goBack();
   };
 
@@ -48,6 +93,7 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
         <View style={s.readHead}>
           <Avatar name={existing.name} size={72} />
           <Text style={s.readName}>{existing.name}</Text>
+          {existing.email ? <Text style={s.readUpi}>{existing.email}</Text> : null}
           {existing.upiId ? <Text style={s.readUpi}>UPI: {existing.upiId}</Text> : null}
         </View>
         <Text style={[ui.hint, { textAlign: 'center' }]}>
@@ -58,7 +104,11 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
   }
 
   return (
-    <Screen footer={<Button title={existing ? 'Save changes' : 'Add friend'} onPress={save} />}>
+    <Screen
+      footer={
+        <Button title={busy ? 'Saving…' : existing ? 'Save changes' : 'Add friend'} onPress={save} disabled={busy} />
+      }
+    >
       <Field
         label={isMe ? 'Your name' : 'Name'}
         value={name}
@@ -66,8 +116,24 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
         placeholder="Ravi"
         autoCapitalize="words"
         error={nameError}
-        hint={!isMe && mode === 'cloud' ? 'When they join with an invite link, they take over this name with everything recorded for them.' : undefined}
       />
+      {showGmail ? (
+        <Field
+          label="Gmail address"
+          value={gmail}
+          onChangeText={setGmail}
+          placeholder="ravi@gmail.com"
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="email-address"
+          error={gmailError}
+          hint={
+            existing
+              ? 'When they sign in with this Gmail, they take over this name with everything recorded for them. If they already use Cosmic Khaata, that happens straight away.'
+              : 'The email they sign in with. If they already use Cosmic Khaata they’re added as themselves; if not, they’re linked as soon as they sign in. Without it, they only show up for you until they join with an invite link.'
+          }
+        />
+      ) : null}
       <Field
         label="UPI ID (optional)"
         value={upi}
@@ -82,6 +148,7 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
             : 'Lets you open your UPI app with their ID and the amount filled in when you settle up.'
         }
       />
+      {saveError ? <Text style={ui.error}>{saveError}</Text> : null}
 
       {isMe ? (
         <>
@@ -90,6 +157,9 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
               <SectionTitle>Account</SectionTitle>
               <Text style={[ui.hint, { marginTop: 0, marginBottom: space.md }]}>
                 Signed in as {email ?? 'your Google account'}. Your groups are saved online and shared with the friends in them.
+                {unsaved > 0
+                  ? ` ${unsaved} change${unsaved === 1 ? ' hasn’t' : 's haven’t'} been sent yet; if you sign out, ${unsaved === 1 ? 'it goes' : 'they go'} out the next time you sign in on this phone.`
+                  : ''}
               </Text>
               <Button title="Sign out" variant="secondary" onPress={signOut} />
             </>

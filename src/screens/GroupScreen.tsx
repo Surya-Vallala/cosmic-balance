@@ -91,7 +91,14 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
         {mode === 'cloud' && group.inviteCode ? (
           <Row
             title="Invite friends"
-            subtitle={inviteNote ?? inviteSubtitle(group.memberIds.filter((id) => id !== meId && !state.people[id]?.userId).map(nameOf))}
+            subtitle={
+              inviteNote ??
+              inviteSubtitle(
+                group.memberIds
+                  .filter((id) => id !== meId && !state.people[id]?.userId)
+                  .map((id) => ({ name: nameOf(id), hasEmail: !!state.people[id]?.email })),
+              )
+            }
             right={<Text style={s.chevron}>›</Text>}
             onPress={async () => {
               const result = await shareText(
@@ -219,10 +226,15 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
 }
 
 /** Who still needs to accept the invite. */
-function inviteSubtitle(waiting: string[]): string {
+function inviteSubtitle(waiting: { name: string; hasEmail: boolean }[]): string {
   if (waiting.length === 0) return 'Send the link so friends can join and add expenses too.';
-  const names = waiting.length <= 2 ? waiting.join(' and ') : `${waiting.slice(0, 2).join(', ')} and ${waiting.length - 2} more`;
-  return `${names} ${waiting.length === 1 ? "hasn't" : "haven't"} joined yet. Send them the link.`;
+  const list = (names: string[]) =>
+    names.length <= 2 ? names.join(' and ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`;
+  const noEmail = waiting.filter((w) => !w.hasEmail).map((w) => w.name);
+  if (noEmail.length === 0) {
+    return `${list(waiting.map((w) => w.name))} will see this group when they sign in with their Gmail. You can also send them the link.`;
+  }
+  return `${list(noEmail)} ${noEmail.length === 1 ? "hasn't" : "haven't"} joined yet. Send them the link, or add their Gmail.`;
 }
 
 /** "Ravi", "You and Ravi", or "3 people" for an expense's payers. */

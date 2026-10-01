@@ -2,8 +2,16 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, AppState as RNAppState } from 'react-native';
-import { applyOps, ensureMe, fetchRows, subscribe } from './cloud/api';
-import { actionToOps, rowsToState } from './cloud/sync';
+import {
+  addPersonByEmail as apiAddPersonByEmail,
+  applyOps,
+  CloudError,
+  ensureMe,
+  fetchRows,
+  setPersonEmail as apiSetPersonEmail,
+  subscribe,
+} from './cloud/api';
+import { actionToOps, personFromRow, rowsToState, type Op } from './cloud/sync';
 import { formatMoney } from './money';
 import type { Activity, AppState, Expense, Group, Id, Payment, Person, Transfer } from './types';
 
@@ -40,6 +48,7 @@ export type Action =
   | { type: 'savePerson'; person: Person }
   | { type: 'saveGroup'; group: Group }
   | { type: 'deleteGroup'; id: Id }
+  | { type: 'leaveGroup'; id: Id }
   | { type: 'saveExpense'; expense: Expense }
   | { type: 'deleteExpense'; id: Id }
   | { type: 'addPayment'; payment: Payment }
@@ -87,6 +96,16 @@ function reducer(s: AppState, a: Action): AppState {
         activity: log(s, `You deleted ${g?.name ?? 'a group'}`),
       };
     }
+    case 'leaveGroup': {
+      const g = s.groups.find((x) => x.id === a.id);
+      return {
+        ...s,
+        groups: s.groups.filter((x) => x.id !== a.id),
+        expenses: s.expenses.filter((e) => e.groupId !== a.id),
+        payments: s.payments.filter((p) => p.groupId !== a.id),
+        activity: log(s, `You left ${g?.name ?? 'a group'}`),
+      };
+    }
     case 'saveExpense': {
       const e = a.expense;
       const exists = s.expenses.some((x) => x.id === e.id);
@@ -120,7 +139,7 @@ function reducer(s: AppState, a: Action): AppState {
       const to = p.to === s.meId ? 'you' : nameOf(s, p.to);
       return {
         ...s,
-        payments: [p, ...s.payments],
+        payments: [p, ...s.payments.filter((x) => x.id !== p.id)],
         activity: log(s, `${from} paid ${to} ${formatMoney(p.amount, p.currency)} in ${g?.name ?? 'a group'}`, p.groupId),
       };
     }
@@ -162,10 +181,11 @@ function reducer(s: AppState, a: Action): AppState {
       const to = t.to === s.meId ? 'you' : nameOf(s, t.to);
       const groupsCleared = new Set(a.payments.map((p) => p.groupId)).size;
       const where = groupsCleared ? `, clearing ${groupsCleared} group${groupsCleared === 1 ? '' : 's'}` : '';
+      const ids = new Set(a.payments.map((p) => p.id));
       return {
         ...s,
-        transfers: [t, ...s.transfers],
-        payments: [...a.payments, ...s.payments],
+        transfers: [t, ...s.transfers.filter((x) => x.id !== t.id)],
+        payments: [...a.payments, ...s.payments.filter((p) => !ids.has(p.id))],
         activity: log(s, `${nameOf(s, t.from)} settled up with ${to}: ${formatMoney(t.amount, t.currency)}${where}`),
       };
     }
@@ -185,14 +205,35 @@ interface Store {
   email: string | null;
   /** Reload everything from the shared database. */
   refresh: () => Promise<void>;
-  /** A save that didn't reach the database, shown to the user. */
+  /** A change the database refused, shown to the user. */
   syncError: string | null;
   clearSyncError: () => void;
   /** Couldn't load shared data at all (and nothing cached). */
   loadError: string | null;
+  /** Changes made on this phone that haven't reached the database yet. */
+  unsaved: number;
+  /** The last attempt to reach the database failed for lack of a connection. */
+  offline: boolean;
+  /** Shared mode: add a friend by email (their account, or a placeholder that links when they sign in). */
+  addPersonByEmail: (email: string, name?: string) => Promise<Person>;
+  /** Shared mode: give a friend who hasn't joined an email. Returns the id they have afterwards. */
+  setPersonEmail: (personId: Id, email: string) => Promise<Id>;
 }
 
 const StoreContext = createContext<Store | null>(null);
+
+/** A change waiting to be written to the shared database, in order. */
+interface PendingWrite {
+  id: string;
+  action: Action;
+  ops: Op[];
+}
+
+/** Apply changes still on their way to the database on top of fresh data. */
+function withPending(fresh: AppState, pending: PendingWrite[]): AppState {
+  // The activity feed in shared mode comes from the database, so leave it as fetched.
+  return pending.reduce((s, p) => ({ ...reducer(s, p.action), activity: s.activity }), fresh);
+}
 
 /**
  * Bring data saved by older versions of the app up to date:
@@ -248,30 +289,74 @@ export function StoreProvider({
   const [ready, setReady] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [unsaved, setUnsaved] = useState(0);
+  const [offline, setOffline] = useState(false);
+  const offlineRef = useRef(false);
+  useEffect(() => {
+    offlineRef.current = offline;
+  }, [offline]);
   const loaded = useRef(false);
   const userId = mode === 'cloud' ? session?.user.id ?? null : null;
   const storageKey = mode === 'cloud' ? `cosmic-khaata:cloud:${userId}` : STORAGE_KEY;
+  const pendingKey = `${storageKey}:pending`;
 
   const replaceState = useCallback((next: AppState) => {
     stateRef.current = next;
     setState(next);
   }, []);
 
+  // ---- Shared mode: changes on their way to the database ------------------------
+  // Each change shows at once and joins a queue saved on the phone. The queue
+  // is written in order; without a connection it waits and tries again, so
+  // nothing is lost when the signal drops or the app is closed. A change the
+  // database refuses is dropped and the reason shown.
+  const pending = useRef<PendingWrite[]>([]);
+  const writesDone = useRef(0); // to spot a fetch that raced with a write
+  const flushing = useRef(false);
+  const alive = useRef(true);
+  const wakeFlusher = useRef<(() => void) | null>(null);
+  const idleWaiters = useRef<(() => void)[]>([]);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      wakeFlusher.current?.();
+    };
+  }, []);
+
+  const savePending = useCallback(() => {
+    setUnsaved(pending.current.length);
+    AsyncStorage.setItem(pendingKey, JSON.stringify(pending.current)).catch(() => {});
+  }, [pendingKey]);
+
   // ---- Shared mode: fetching ---------------------------------------------------
   // The provider is remounted (keyed by mode and user) when either changes, so
   // everything here starts fresh for each account.
   const meIdRef = useRef<string | null>(null);
+  const fetchSeq = useRef(0);
   const refresh = useCallback(async () => {
     if (mode !== 'cloud' || !session) return;
+    const seq = ++fetchSeq.current;
     try {
       if (!meIdRef.current) meIdRef.current = (await ensureMe(displayName(session))).id;
-      const rows = await fetchRows();
-      replaceState(rowsToState(rows, meIdRef.current));
+      for (let attempt = 0; ; attempt++) {
+        const writesBefore = writesDone.current;
+        const rows = await fetchRows();
+        if (seq !== fetchSeq.current) return; // a newer fetch is on its way
+        // If a write landed while fetching, this copy may be missing it: fetch again.
+        if (writesDone.current !== writesBefore && attempt < 2) continue;
+        replaceState(withPending(rowsToState(rows, meIdRef.current), pending.current));
+        break;
+      }
       setLoadError(null);
+      setOffline(false);
+      wakeFlusher.current?.(); // we're online: send anything waiting now
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      if (!stateRef.current.meId) setLoadError(message);
-      else setSyncError(message);
+      const err = e instanceof CloudError ? e : new CloudError(String(e));
+      if (!stateRef.current.meId) setLoadError(err.message);
+      else if (err.retry) setOffline(true);
+      else setSyncError(err.message);
     }
   }, [mode, session, replaceState]);
   // Timers and listeners call the latest refresh (the session object changes when tokens renew).
@@ -279,6 +364,72 @@ export function StoreProvider({
   useEffect(() => {
     refreshRef.current = refresh;
   }, [refresh]);
+
+  // Refetch soon after changes; many changes in a burst cause one refetch.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRefresh = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => refreshRef.current(), 500);
+  }, []);
+  useEffect(() => () => {
+    if (timer.current) clearTimeout(timer.current);
+  }, []);
+
+  const flush = useCallback(async () => {
+    if (flushing.current || mode !== 'cloud') return;
+    flushing.current = true;
+    let delay = 2000;
+    try {
+      while (alive.current && pending.current.length > 0) {
+        const item = pending.current[0];
+        try {
+          await applyOps(item.ops);
+        } catch (e) {
+          const err = e instanceof CloudError ? e : new CloudError(String(e));
+          if (err.retry) {
+            setOffline(true);
+            // Wait, then try again; coming back online or a new change wakes it sooner.
+            await new Promise<void>((resolve) => {
+              const t = setTimeout(done, delay);
+              function done() {
+                clearTimeout(t);
+                wakeFlusher.current = null;
+                resolve();
+              }
+              wakeFlusher.current = done;
+            });
+            delay = Math.min(delay * 2, 30000);
+            continue;
+          }
+          setSyncError(err.message);
+        }
+        pending.current = pending.current.filter((p) => p.id !== item.id);
+        writesDone.current += 1;
+        delay = 2000;
+        setOffline(false);
+        savePending();
+      }
+    } finally {
+      flushing.current = false;
+    }
+    if (!alive.current) return;
+    if (pending.current.length === 0) {
+      idleWaiters.current.splice(0).forEach((resolve) => resolve());
+    }
+    scheduleRefresh();
+  }, [mode, savePending, scheduleRefresh]);
+
+  /** Resolves once everything queued so far has reached the database (or after a while). */
+  const whenSaved = useCallback(
+    () =>
+      pending.current.length === 0
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            idleWaiters.current.push(resolve);
+            setTimeout(resolve, 15000);
+          }),
+    [],
+  );
 
   // ---- Loading -------------------------------------------------------------
   useEffect(() => {
@@ -294,6 +445,13 @@ export function StoreProvider({
             if (mode === 'cloud') setReady(true); // show cached data while refreshing
           }
         }
+        if (mode === 'cloud') {
+          const saved = JSON.parse((await AsyncStorage.getItem(pendingKey)) ?? '[]');
+          if (Array.isArray(saved) && !cancelled) {
+            pending.current = saved;
+            setUnsaved(saved.length);
+          }
+        }
       } catch {
         // Storage unavailable: carry on without the cache.
       }
@@ -304,6 +462,7 @@ export function StoreProvider({
       }
       await refreshRef.current();
       if (!cancelled) setReady(true);
+      if (pending.current.length) void flush();
     })();
     return () => {
       cancelled = true;
@@ -317,40 +476,47 @@ export function StoreProvider({
     AsyncStorage.setItem(storageKey, JSON.stringify(state)).catch(() => {});
   }, [state, storageKey]);
 
-
-  // Refetch soon after changes; many changes in a burst cause one refetch.
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const scheduleRefresh = useCallback(() => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => refreshRef.current(), 500);
-  }, []);
-
-  // Live updates from other people, and a refresh whenever the app comes back.
+  // Live updates from other people; a refresh whenever the app comes back, when
+  // the connection returns, and every half minute while it's open (in case a
+  // live update was missed).
   useEffect(() => {
     if (mode !== 'cloud' || !session) return;
     const stop = subscribe(scheduleRefresh);
+    const visible = () => typeof document === 'undefined' || document.visibilityState === 'visible';
     const onVisible = () => {
-      if (typeof document === 'undefined' || document.visibilityState === 'visible') scheduleRefresh();
+      if (visible()) {
+        wakeFlusher.current?.();
+        scheduleRefresh();
+      }
     };
+    const onOnline = () => {
+      wakeFlusher.current?.();
+      scheduleRefresh();
+    };
+    const poll = setInterval(() => {
+      if (visible()) scheduleRefresh();
+    }, 30000);
     let removeNative: (() => void) | undefined;
-    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+    const web = Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined';
+    if (web) {
       document.addEventListener('visibilitychange', onVisible);
+      window.addEventListener('online', onOnline);
     } else {
-      const sub = RNAppState.addEventListener('change', (s) => s === 'active' && scheduleRefresh());
+      const sub = RNAppState.addEventListener('change', (s) => s === 'active' && onOnline());
       removeNative = () => sub.remove();
     }
     return () => {
       stop();
-      if (Platform.OS === 'web' && typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
+      clearInterval(poll);
+      if (web) {
+        document.removeEventListener('visibilitychange', onVisible);
+        window.removeEventListener('online', onOnline);
+      }
       removeNative?.();
     };
   }, [mode, session, scheduleRefresh]);
 
   // ---- Changes -----------------------------------------------------------------
-  // Shared mode: the change shows at once, and is written to the database in
-  // order in the background. If a write fails, the error is shown and the
-  // app reloads what the database really holds.
-  const queue = useRef<Promise<void>>(Promise.resolve());
   const dispatch = useCallback(
     (action: Action) => {
       const before = stateRef.current;
@@ -358,16 +524,42 @@ export function StoreProvider({
       if (mode !== 'cloud') return;
       const ops = actionToOps(action, before);
       if (ops.length === 0) return;
-      queue.current = queue.current.then(async () => {
-        try {
-          await applyOps(ops);
-        } catch (e) {
-          setSyncError(e instanceof Error ? e.message : String(e));
-        }
-        scheduleRefresh();
-      });
+      pending.current = [...pending.current, { id: uid(), action, ops }];
+      savePending();
+      wakeFlusher.current?.();
+      void flush();
     },
-    [mode, replaceState, scheduleRefresh],
+    [mode, replaceState, savePending, flush],
+  );
+
+  // Looking someone up by email needs a connection; say so at once rather than queueing it.
+  const needOnline = (e: unknown): never => {
+    if (e instanceof CloudError && e.retry) {
+      throw new CloudError('You need a connection to add someone by Gmail. Try again when you’re online.', true);
+    }
+    throw e;
+  };
+
+  const addPersonByEmail = useCallback(
+    async (email: string, name?: string) => {
+      if (!offlineRef.current) await whenSaved();
+      const person = personFromRow(await apiAddPersonByEmail(email, name).catch(needOnline));
+      const s = stateRef.current;
+      replaceState({ ...s, people: { ...s.people, [person.id]: person } });
+      scheduleRefresh();
+      return person;
+    },
+    [whenSaved, replaceState, scheduleRefresh],
+  );
+
+  const setPersonEmail = useCallback(
+    async (personId: Id, email: string) => {
+      if (!offlineRef.current) await whenSaved();
+      const id = await apiSetPersonEmail(personId, email).catch(needOnline);
+      await refreshRef.current();
+      return id;
+    },
+    [whenSaved],
   );
 
   const value = useMemo(
@@ -382,8 +574,12 @@ export function StoreProvider({
       syncError,
       clearSyncError: () => setSyncError(null),
       loadError,
+      unsaved,
+      offline,
+      addPersonByEmail,
+      setPersonEmail,
     }),
-    [state, dispatch, ready, mode, userId, session, refresh, syncError, loadError],
+    [state, dispatch, ready, mode, userId, session, refresh, syncError, loadError, unsaved, offline, addPersonByEmail, setPersonEmail],
   );
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

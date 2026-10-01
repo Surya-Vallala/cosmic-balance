@@ -13,6 +13,11 @@ export interface Person {
    * have signed in; empty for friends added by name who haven't joined yet.
    */
   userId?: string | null;
+  /**
+   * Shared mode only: their email. For a friend who hasn't joined yet, the
+   * Gmail address that links them automatically when they sign in.
+   */
+  email?: string | null;
 }
 
 export interface Group {

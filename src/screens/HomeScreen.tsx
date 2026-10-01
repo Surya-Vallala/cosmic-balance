@@ -20,7 +20,7 @@ function joinAmounts(entries: [string, number][]): string {
 }
 
 export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
-  const { state } = useStore();
+  const { state, mode } = useStore();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('groups');
   const meId = state.meId!;
@@ -168,7 +168,13 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                       key={p.id}
                       left={<Avatar name={p.name} />}
                       title={p.name}
-                      subtitle={p.upiId ? p.upiId : undefined}
+                      subtitle={
+                        mode === 'cloud' && !p.userId
+                          ? p.email
+                            ? `Not joined yet · linked when they sign in with ${p.email}`
+                            : 'Not on Cosmic Khaata yet'
+                          : p.upiId || undefined
+                      }
                       right={<TotalsTag totals={fb[p.id] ?? {}} />}
                       onPress={() => navigation.navigate('Friend', { friendId: p.id })}
                       last={i === friends.length - 1}

@@ -24,8 +24,8 @@ const expense: Expense = {
 
 const rows: Rows = {
   people: [
-    { id: ME, user_id: U_ME, name: 'Surya', upi_id: 'surya@okicici', created_by: U_ME, created_at: '2026-10-01T09:00:00Z' },
-    { id: RAVI, user_id: null, name: 'Ravi', upi_id: null, created_by: U_ME, created_at: '2026-10-01T09:01:00Z' },
+    { id: ME, user_id: U_ME, name: 'Surya', upi_id: 'surya@okicici', email: 'surya@gmail.com', created_by: U_ME, created_at: '2026-10-01T09:00:00Z' },
+    { id: RAVI, user_id: null, name: 'Ravi', upi_id: null, email: 'ravi@gmail.com', created_by: U_ME, created_at: '2026-10-01T09:01:00Z' },
   ],
   groups: [
     {
@@ -59,7 +59,8 @@ describe('rowsToState', () => {
 
   it('maps people, marking who has an account', () => {
     expect(s.meId).toBe(ME);
-    expect(s.people[ME]).toEqual({ id: ME, name: 'Surya', upiId: 'surya@okicici', userId: U_ME });
+    expect(s.people[ME]).toEqual({ id: ME, name: 'Surya', upiId: 'surya@okicici', userId: U_ME, email: 'surya@gmail.com' });
+    expect(s.people[RAVI].email).toBe('ravi@gmail.com');
     expect(s.people[RAVI].userId).toBeNull();
   });
 
@@ -110,14 +111,29 @@ describe('actionToOps', () => {
 
   it('inserts new groups and updates only editable columns of existing ones', () => {
     const g = { ...before.groups[0], name: 'Thailand 2026' };
-    const [op] = actionToOps({ type: 'saveGroup', group: g }, before);
-    expect(op.kind).toBe('update');
-    expect(Object.keys((op as { values: object }).values).sort()).toEqual(
-      ['base_currency', 'member_ids', 'name', 'rates', 'simplify_debts', 'updated_at'].sort(),
+    const ops = actionToOps({ type: 'saveGroup', group: g }, before);
+    expect(ops).toHaveLength(1);
+    expect(ops[0].kind).toBe('update');
+    expect(Object.keys((ops[0] as { values: object }).values).sort()).toEqual(
+      ['base_currency', 'name', 'rates', 'simplify_debts', 'updated_at'].sort(),
     );
     const [ins] = actionToOps({ type: 'saveGroup', group: { ...g, id: 'g2' } }, before);
-    expect(ins).toMatchObject({ table: 'groups', kind: 'insert', values: { id: 'g2', name: 'Thailand 2026' } });
+    expect(ins).toMatchObject({ table: 'groups', kind: 'insert', values: { id: 'g2', name: 'Thailand 2026', member_ids: [ME, RAVI] } });
     expect((ins as { values: Record<string, unknown> }).values.invite_code).toBeUndefined();
+  });
+
+  it('changes members as additions and removals, never by overwriting the list', () => {
+    const PRIYA = '44444444-4444-4444-8444-444444444444';
+    const g = { ...before.groups[0], memberIds: [ME, PRIYA] };
+    const ops = actionToOps({ type: 'saveGroup', group: g }, before);
+    expect(ops.map((o) => o.kind)).toEqual(['update', 'rpc']);
+    expect(ops[1]).toEqual({ kind: 'rpc', fn: 'set_group_members', args: { p_group: G, p_add: [PRIYA], p_remove: [RAVI] } });
+  });
+
+  it('leaves a group by removing yourself', () => {
+    expect(actionToOps({ type: 'leaveGroup', id: G }, before)).toEqual([
+      { kind: 'rpc', fn: 'set_group_members', args: { p_group: G, p_add: [], p_remove: [ME] } },
+    ]);
   });
 
   it('upserts expenses and deletes by id', () => {
@@ -130,7 +146,7 @@ describe('actionToOps', () => {
     const settlement: Transfer = { id: 's1', kind: 'settlement', from: RAVI, to: ME, currency: 'INR', amount: 100, date: '', createdAt: '' };
     const payment: Payment = { id: 'p1', groupId: G, from: RAVI, to: ME, currency: 'INR', amount: 100, baseAmount: 100, date: '', settlementId: 's1' };
     const ops = actionToOps({ type: 'settleOverall', settlement, payments: [payment] }, before);
-    expect(ops.map((o) => o.table)).toEqual(['transfers', 'payments']);
+    expect(ops.map((o) => ('table' in o ? o.table : o.fn))).toEqual(['transfers', 'payments']);
     expect(ops[0]).toMatchObject({ kind: 'insert', values: { id: 's1', from_person: RAVI, to_person: ME } });
     expect(ops[1]).toMatchObject({ kind: 'insert', values: [{ id: 'p1', group_id: G, settlement_id: 's1' }] });
   });

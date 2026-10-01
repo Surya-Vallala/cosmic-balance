@@ -86,9 +86,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    const id = session?.user.id;
     await supabase.auth.signOut().catch(() => {});
+    // Forget this account's copy of the shared data on this phone. Changes not
+    // sent yet are kept, and go out the next time this account signs in here.
+    if (id) AsyncStorage.removeItem(`cosmic-khaata:cloud:${id}`).catch(() => {});
     setSession(null);
-  }, []);
+  }, [session]);
 
   const chooseThisPhoneOnly = useCallback(() => {
     AsyncStorage.setItem(MODE_KEY, 'local').catch(() => {});

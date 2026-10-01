@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { resetInviteCode } from '../cloud/api';
+import { isEmail } from '../emails';
 import { groupNet } from '../logic';
 import { approxRate, currency, CURRENCY_CODES, parseNumber } from '../money';
 import type { ScreenProps } from '../navigation';
@@ -23,8 +24,10 @@ import {
 } from '../ui';
 
 export default function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>) {
-  const { state, dispatch, mode, userId, refresh } = useStore();
+  const { state, dispatch, mode, userId, refresh, addPersonByEmail } = useStore();
   const [linkNote, setLinkNote] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [addNote, setAddNote] = useState<string | null>(null);
   const meId = state.meId!;
   const existing = state.groups.find((g) => g.id === route.params.groupId);
 
@@ -87,19 +90,51 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
     }
   };
 
-  const addFriend = () => {
+  const addFriend = async () => {
     const n = newFriend.trim();
-    if (!n) return;
+    if (!n || adding) return;
+    setError(null);
+    setAddNote(null);
+    // Shared mode: a Gmail address links the person's account, now or when they first sign in.
+    if (mode === 'cloud' && isEmail(n)) {
+      setAdding(true);
+      try {
+        const p = await addPersonByEmail(n);
+        if (p.id === meId) throw new Error('That’s your own email address.');
+        setMembers((m) => (m.includes(p.id) ? m : [...m, p.id]));
+        setAddNote(
+          p.userId
+            ? `${p.name} is on Cosmic Khaata and will see this group once you save it.`
+            : `${n} isn’t on Cosmic Khaata yet. They’ll see this group as soon as they sign in with this Gmail.`,
+        );
+        setNewFriend('');
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Couldn’t add them. Try again.');
+      } finally {
+        setAdding(false);
+      }
+      return;
+    }
     const match = friends.find((f) => f.name.toLowerCase() === n.toLowerCase());
     if (match) {
-      if (!members.includes(match.id)) setMembers([...members, match.id]);
+      setMembers((m) => (m.includes(match.id) ? m : [...m, match.id]));
     } else {
       const id = uid();
       dispatch({ type: 'savePerson', person: { id, name: n } });
-      setMembers([...members, id]);
+      setMembers((m) => [...m, id]);
+      if (mode === 'cloud') {
+        setAddNote(
+          `Added ${n} by name, so this group shows up only for the people already in it. To let ${n} see it, add their Gmail address instead, or send them the invite link after saving.`,
+        );
+      }
     }
     setNewFriend('');
   };
+
+  // You can leave a group (shared mode) unless you're in its expenses or payments.
+  const meInUse =
+    groupExpenses.some((e) => meId in e.payers || meId in e.shares) ||
+    groupPayments.some((p) => p.from === meId || p.to === meId);
 
   const changeBase = (code: CurrencyCode) => {
     setCurrencyError(null);
@@ -196,17 +231,32 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
         <TextInput
           value={newFriend}
           onChangeText={setNewFriend}
-          placeholder="Add someone new by name"
+          placeholder={mode === 'cloud' ? 'Gmail address or name' : 'Add someone new by name'}
           placeholderTextColor={colors.placeholder}
           keyboardAppearance="dark"
           selectionColor={colors.star}
           style={[ui.input, { flex: 1 }]}
           onSubmitEditing={addFriend}
           returnKeyType="done"
-          autoCapitalize="words"
+          autoCapitalize={mode === 'cloud' ? 'none' : 'words'}
+          autoCorrect={false}
+          keyboardType={mode === 'cloud' ? 'email-address' : 'default'}
+          accessibilityLabel={mode === 'cloud' ? 'Add a friend by Gmail address or name' : 'Add someone new by name'}
         />
-        <Button title="Add" small variant="secondary" onPress={addFriend} disabled={!newFriend.trim()} style={{ minHeight: 48 }} />
+        <Button
+          title={adding ? 'Adding…' : 'Add'}
+          small
+          variant="secondary"
+          onPress={addFriend}
+          disabled={!newFriend.trim() || adding}
+          style={{ minHeight: 48 }}
+        />
       </View>
+      {mode === 'cloud' ? (
+        <Text style={ui.hint}>
+          {addNote ?? 'Add friends by their Gmail address so the group shows up on their phone too.'}
+        </Text>
+      ) : null}
 
       <SectionTitle>Currencies</SectionTitle>
       <List>
@@ -317,9 +367,23 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
       ) : null}
 
       {existing && mode === 'cloud' && existing.createdBy !== userId ? (
-        <Text style={[ui.hint, { textAlign: 'center', marginTop: space.xl }]}>
-          Only the person who created this group can delete it.
-        </Text>
+        <View style={{ marginTop: space.xl }}>
+          {meInUse ? (
+            <Text style={[ui.hint, { textAlign: 'center', marginBottom: space.sm }]}>
+              You’re in this group’s expenses or payments, so you can’t leave it.
+            </Text>
+          ) : (
+            <ConfirmButton
+              title="Leave group"
+              confirmTitle="Tap again to leave the group"
+              onConfirm={() => {
+                dispatch({ type: 'leaveGroup', id: existing.id });
+                navigation.popToTop();
+              }}
+            />
+          )}
+          <Text style={[ui.hint, { textAlign: 'center' }]}>Only the person who created this group can delete it.</Text>
+        </View>
       ) : existing ? (
         <View style={{ marginTop: space.xl }}>
           <ConfirmButton

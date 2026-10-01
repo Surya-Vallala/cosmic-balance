@@ -1,7 +1,7 @@
-import React, { useEffect, useLayoutEffect, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../auth';
-import { groupPreview, joinGroup, type GroupPreview } from '../cloud/api';
+import { CloudError, groupPreview, joinGroup, type GroupPreview } from '../cloud/api';
 import type { ScreenProps } from '../navigation';
 import { useStore } from '../store';
 import { colors, fonts, space } from '../theme';
@@ -15,17 +15,38 @@ export default function JoinScreen({ navigation, route }: ScreenProps<'Join'>) {
   const [preview, setPreview] = useState<GroupPreview | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: 'Join a group' });
   }, [navigation]);
 
-  useEffect(() => {
-    clearPendingJoin();
+  // Keep the invite until we know whether it works, so a dropped connection doesn't lose it.
+  const fetchPreview = useCallback(() => {
     groupPreview(code)
-      .then(setPreview)
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)));
+      .then((p) => {
+        setPreview(p);
+        clearPendingJoin();
+      })
+      .catch((e) => {
+        const retry = e instanceof CloudError && e.retry;
+        setError(e instanceof Error ? e.message : String(e));
+        setCanRetry(retry);
+        setPreview(null);
+        if (!retry) clearPendingJoin();
+      });
   }, [code, clearPendingJoin]);
+
+  useEffect(() => {
+    fetchPreview();
+  }, [fetchPreview]);
+
+  const load = () => {
+    setError(null);
+    setCanRetry(false);
+    setPreview(undefined);
+    fetchPreview();
+  };
 
   const join = async (claim: string | null) => {
     setBusy(claim ?? 'new');
@@ -52,9 +73,14 @@ export default function JoinScreen({ navigation, route }: ScreenProps<'Join'>) {
     return (
       <Screen>
         <Empty
-          title="This invite link doesn't work"
+          title={canRetry ? 'Couldn’t open the invite' : 'This invite link doesn’t work'}
           body={error ?? 'It may have been replaced with a new one. Ask whoever sent it for a fresh link.'}
-          action={<Button title="Go to my groups" variant="secondary" onPress={() => navigation.popToTop()} />}
+          action={
+            <View style={{ gap: space.sm }}>
+              {canRetry ? <Button title="Try again" onPress={load} /> : null}
+              <Button title="Go to my groups" variant="secondary" onPress={() => navigation.popToTop()} />
+            </View>
+          }
         />
       </Screen>
     );

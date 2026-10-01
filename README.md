@@ -30,12 +30,17 @@ There are two ways to use it:
 
 ## Sharing with friends
 
-1. Sign in with Google and start a group. Add friends by name (they don't need an account yet).
-2. In the group, tap **Invite friends** and send the link on WhatsApp (or copy it).
-3. A friend opens the link, signs in with Google and taps **I'm Ravi** (their name in the list). Everything already recorded for "Ravi" becomes theirs: expenses, payments and transfers. If they aren't in the list, they can join as themselves.
-4. From then on they manage their own name and UPI ID, and see the group live.
+**Add friends by their Gmail address** (in a group's "Who's in it", or Friends → Add a friend):
 
-Who sees what: you see a group only if you're in it. A transfer outside groups is seen only by the two people in it (and whoever recorded it). Only the person who created a group can delete it. Anyone with an invite link can join that group, so share it only with the friends in it; **Reset link** in the group's settings makes the old link stop working.
+- If they already use Cosmic Khaata, they're added as themselves and see the group straight away.
+- If they don't yet, they're added as "not joined yet". The first time they sign in with that Gmail, they land in the group with everything recorded for them. No link needed.
+- Gmail addresses match however they're typed: `S.Urya+trip@GMail.com` is `surya@gmail.com`.
+
+**Or send an invite link**: in the group, tap **Invite friends** and send the link on WhatsApp (or copy it). A friend opens it, signs in with Google and taps **I'm Ravi** (the name you added them by). Everything recorded for "Ravi" becomes theirs. If they aren't in the list, they can join as themselves. A friend added by name only can also be linked later: open them under Friends → Edit and add their Gmail.
+
+Who sees what: you see a group only if you're in it. A transfer outside groups is seen only by the two people in it (and whoever recorded it). Friends added by Gmail see each other in their Friends lists. Only the person who created a group can delete it; anyone else can leave a group they have no expenses in. Anyone with an invite link can join that group, so share it only with the friends in it; **Reset invite link** in the group's settings makes the old link stop working.
+
+**Without a connection**, changes are kept on the phone and sent as soon as it's back online, even if the app was closed in between. A strip at the top says how many are waiting.
 
 ## Look and feel
 
@@ -65,7 +70,7 @@ and upload the `dist` folder.
 
 The backend is a free Supabase project (`cosmic-khaata`). The app only contains the project URL and the **publishable** key, which are safe to ship; the database rules decide what each person can see. Never put the secret key (`sb_secret_…` or `service_role`) in the app.
 
-1. **Database**: in Supabase, open **SQL Editor → New query**, paste all of [`supabase/schema.sql`](supabase/schema.sql) and press **Run**. It's safe to run again after changes.
+1. **Database**: in Supabase, open **SQL Editor → New query**, paste all of [`supabase/schema.sql`](supabase/schema.sql) and press **Run**. It's safe to run again, and running the latest version is also how an existing database is upgraded (data is kept). Run it *before* publishing a new version of the app.
 2. **Google sign-in**: in [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials, create an **OAuth client ID** of type *Web application* with
    - Authorised JavaScript origin: `https://surya-vallala.github.io`
    - Authorised redirect URI: `https://jwmnmrmocilfrqohhezf.supabase.co/auth/v1/callback`
@@ -114,14 +119,20 @@ supabase/
 public/                  web app manifest, icons and page template
 ```
 
+Free Supabase projects pause after about a week with no activity. The workflow in `.github/workflows/keep-supabase-awake.yml` makes one small read every day so that never happens (free for public repositories; GitHub stops scheduled workflows after 60 days without any commits, and emails you first).
+
 ## Checks
 
 ```bash
-npx tsc --noEmit     # type-check
-npx expo lint        # lint
-npx vitest run       # 45 tests: splits, payers, currencies, rounding, balances, summary,
-                     # transfers, and converting between app state and database rows
+npx tsc --noEmit                 # type-check
+npx expo lint                    # lint
+npx vitest run                   # 47 tests: splits, payers, currencies, rounding, balances, summary,
+                                 # transfers, and converting between app state and database rows
+python3 supabase/test_rls.py     # 69 checks of who can see and change what (needs Postgres 16 on :5433)
+python3 supabase/test_upgrade.py # upgrading a database made with the first version
 ```
+
+The database tests create throwaway databases on a local Postgres with a small stand-in for Supabase's auth (`supabase/test_stub.sql`).
 
 ## Next steps
 

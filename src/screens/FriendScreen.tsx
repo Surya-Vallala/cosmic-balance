@@ -10,7 +10,7 @@ import { colors, fonts, space } from '../theme';
 import { Avatar, BalanceTag, Button, Empty, GroupBadge, List, Row, Screen, SectionTitle } from '../ui';
 
 export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'>) {
-  const { state } = useStore();
+  const { state, mode } = useStore();
   const meId = state.meId!;
   const friend = state.people[route.params.friendId];
 
@@ -56,6 +56,13 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
         ))}
         <Text style={s.caption}>Overall, across every group and outside them</Text>
         {friend.upiId ? <Text style={s.upi}>UPI: {friend.upiId}</Text> : null}
+        {mode === 'cloud' && !friend.userId ? (
+          <Text style={s.upi}>
+            {friend.email
+              ? `Not on Cosmic Khaata yet. Linked automatically when they sign in with ${friend.email}.`
+              : 'Not on Cosmic Khaata yet. Tap Edit to add their Gmail, or send them a group’s invite link.'}
+          </Text>
+        ) : null}
       </View>
 
       <View style={s.actions}>
@@ -156,7 +163,7 @@ const s = StyleSheet.create({
   headerLink: { color: colors.star, fontSize: 16, fontWeight: '600', paddingHorizontal: 8 },
   headline: { fontFamily: fonts.light, fontSize: 24, textAlign: 'center', marginTop: space.md, lineHeight: 30 },
   caption: { fontSize: 13, color: colors.muted, marginTop: 4 },
-  upi: { fontSize: 13, color: colors.muted, marginTop: 4 },
+  upi: { fontSize: 13, color: colors.muted, marginTop: 4, textAlign: 'center', lineHeight: 18 },
   actions: { flexDirection: 'row', gap: space.sm, marginTop: space.xl },
   none: { fontSize: 14, color: colors.muted, lineHeight: 20, marginHorizontal: space.xs },
   amount: { fontFamily: fonts.medium, fontSize: 14 },
