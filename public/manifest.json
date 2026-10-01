@@ -1,0 +1,16 @@
+{
+  "name": "Cosmic Khaata",
+  "short_name": "Khaata",
+  "description": "Split bills with friends and keep the khaata balanced. By Tesseract Studio.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B0E24",
+  "theme_color": "#0B0E24",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
