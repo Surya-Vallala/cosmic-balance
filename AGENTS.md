@@ -25,9 +25,9 @@ Run lint and typecheck before declaring any task done.
 
 ## Navigation & Routing
 
-- Use **Expo Router** for all navigation. Routes live in `src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
-- Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
-- Docs: https://docs.expo.dev/router/introduction.md
+- This app uses **React Navigation** (native stack), not Expo Router. Screens live in `src/screens/`, the route list and param types in `src/navigation.ts`, and the navigator in `App.tsx`. Add new screens there; don't create `src/app/`.
+- Invite links (`?join=CODE`) are read in `src/auth.tsx`, not by a router.
+- A move to Expo Router would be a separate, deliberate migration. Docs: https://docs.expo.dev/router/introduction.md
 
 ## Building with EAS
 

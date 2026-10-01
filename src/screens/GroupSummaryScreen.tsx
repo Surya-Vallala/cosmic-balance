@@ -71,7 +71,7 @@ export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'G
       ) : null}
       {multi ? (
         <Text style={s.note}>
-          Converted at the group's rates: {currencies.slice(1).map((c) => rateText(group, c)).join(', ')}.
+          Converted at the group’s rates: {currencies.slice(1).map((c) => rateText(group, c)).join(', ')}.
         </Text>
       ) : null}
 

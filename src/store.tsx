@@ -1,5 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import type { Session } from '@supabase/supabase-js';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform, AppState as RNAppState } from 'react-native';
+import { applyOps, ensureMe, fetchRows, subscribe } from './cloud/api';
+import { actionToOps, rowsToState } from './cloud/sync';
 import { formatMoney } from './money';
 import type { Activity, AppState, Expense, Group, Id, Payment, Person, Transfer } from './types';
 
@@ -7,7 +11,15 @@ const STORAGE_KEY = 'cosmic-khaata:v1';
 // Data saved under the app's earlier names; read once and carried over.
 const LEGACY_STORAGE_KEYS = ['cosmic-split:v1', 'hisaab:v1'];
 
-export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+/** A new random id (UUID v4), the format the shared database expects. */
+export const uid = (): string => {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c?.randomUUID) return c.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (ch) => {
+    const r = (Math.random() * 16) | 0;
+    return (ch === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
+};
 const now = () => new Date().toISOString();
 
 export const emptyState: AppState = {
@@ -21,7 +33,7 @@ export const emptyState: AppState = {
   activity: [],
 };
 
-type Action =
+export type Action =
   | { type: 'hydrate'; state: AppState }
   | { type: 'setup'; me: Person }
   | { type: 'loadSample' }
@@ -164,8 +176,20 @@ function reducer(s: AppState, a: Action): AppState {
 
 interface Store {
   state: AppState;
-  dispatch: React.Dispatch<Action>;
+  dispatch: (action: Action) => void;
   ready: boolean;
+  /** 'local': data on this phone only. 'cloud': shared, signed in. */
+  mode: 'local' | 'cloud';
+  /** Signed-in account (shared mode). */
+  userId: string | null;
+  email: string | null;
+  /** Reload everything from the shared database. */
+  refresh: () => Promise<void>;
+  /** A save that didn't reach the database, shown to the user. */
+  syncError: string | null;
+  clearSyncError: () => void;
+  /** Couldn't load shared data at all (and nothing cached). */
+  loadError: string | null;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -205,35 +229,162 @@ function migrate(saved: AppState): AppState {
   };
 }
 
-export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, emptyState);
-  const [ready, setReady] = useState(false);
-  const loaded = useRef(false);
+function displayName(session: Session): string {
+  const m = session.user.user_metadata ?? {};
+  return (m.full_name || m.name || session.user.email?.split('@')[0] || 'Me') as string;
+}
 
-  useEffect(() => {
-    (async () => {
-      try {
-        let raw = await AsyncStorage.getItem(STORAGE_KEY);
-        for (const key of LEGACY_STORAGE_KEYS) raw = raw ?? (await AsyncStorage.getItem(key));
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed?.version === 1) dispatch({ type: 'hydrate', state: migrate(parsed) });
-        }
-      } catch {
-        // Storage unavailable: start fresh, the app still works in memory.
-      } finally {
-        loaded.current = true;
-        setReady(true);
-      }
-    })();
+export function StoreProvider({
+  mode,
+  session,
+  children,
+}: {
+  mode: 'local' | 'cloud';
+  session: Session | null;
+  children: React.ReactNode;
+}) {
+  const [state, setState] = useState<AppState>(emptyState);
+  const stateRef = useRef<AppState>(emptyState);
+  const [ready, setReady] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const loaded = useRef(false);
+  const userId = mode === 'cloud' ? session?.user.id ?? null : null;
+  const storageKey = mode === 'cloud' ? `cosmic-khaata:cloud:${userId}` : STORAGE_KEY;
+
+  const replaceState = useCallback((next: AppState) => {
+    stateRef.current = next;
+    setState(next);
   }, []);
 
+  // ---- Shared mode: fetching ---------------------------------------------------
+  // The provider is remounted (keyed by mode and user) when either changes, so
+  // everything here starts fresh for each account.
+  const meIdRef = useRef<string | null>(null);
+  const refresh = useCallback(async () => {
+    if (mode !== 'cloud' || !session) return;
+    try {
+      if (!meIdRef.current) meIdRef.current = (await ensureMe(displayName(session))).id;
+      const rows = await fetchRows();
+      replaceState(rowsToState(rows, meIdRef.current));
+      setLoadError(null);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (!stateRef.current.meId) setLoadError(message);
+      else setSyncError(message);
+    }
+  }, [mode, session, replaceState]);
+  // Timers and listeners call the latest refresh (the session object changes when tokens renew).
+  const refreshRef = useRef(refresh);
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
+
+  // ---- Loading -------------------------------------------------------------
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let raw = await AsyncStorage.getItem(storageKey);
+        if (mode === 'local') for (const key of LEGACY_STORAGE_KEYS) raw = raw ?? (await AsyncStorage.getItem(key));
+        if (raw && !cancelled) {
+          const parsed = JSON.parse(raw);
+          if (parsed?.version === 1) {
+            replaceState(migrate(parsed));
+            if (mode === 'cloud') setReady(true); // show cached data while refreshing
+          }
+        }
+      } catch {
+        // Storage unavailable: carry on without the cache.
+      }
+      loaded.current = true;
+      if (mode === 'local') {
+        if (!cancelled) setReady(true);
+        return;
+      }
+      await refreshRef.current();
+      if (!cancelled) setReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, userId]);
+
+  // Save to this phone: all data in local mode, a cache in shared mode.
   useEffect(() => {
     if (!loaded.current) return;
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(state)).catch(() => {});
-  }, [state]);
+    AsyncStorage.setItem(storageKey, JSON.stringify(state)).catch(() => {});
+  }, [state, storageKey]);
 
-  const value = useMemo(() => ({ state, dispatch, ready }), [state, ready]);
+
+  // Refetch soon after changes; many changes in a burst cause one refetch.
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleRefresh = useCallback(() => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => refreshRef.current(), 500);
+  }, []);
+
+  // Live updates from other people, and a refresh whenever the app comes back.
+  useEffect(() => {
+    if (mode !== 'cloud' || !session) return;
+    const stop = subscribe(scheduleRefresh);
+    const onVisible = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') scheduleRefresh();
+    };
+    let removeNative: (() => void) | undefined;
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', onVisible);
+    } else {
+      const sub = RNAppState.addEventListener('change', (s) => s === 'active' && scheduleRefresh());
+      removeNative = () => sub.remove();
+    }
+    return () => {
+      stop();
+      if (Platform.OS === 'web' && typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisible);
+      removeNative?.();
+    };
+  }, [mode, session, scheduleRefresh]);
+
+  // ---- Changes -----------------------------------------------------------------
+  // Shared mode: the change shows at once, and is written to the database in
+  // order in the background. If a write fails, the error is shown and the
+  // app reloads what the database really holds.
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const dispatch = useCallback(
+    (action: Action) => {
+      const before = stateRef.current;
+      replaceState(reducer(before, action));
+      if (mode !== 'cloud') return;
+      const ops = actionToOps(action, before);
+      if (ops.length === 0) return;
+      queue.current = queue.current.then(async () => {
+        try {
+          await applyOps(ops);
+        } catch (e) {
+          setSyncError(e instanceof Error ? e.message : String(e));
+        }
+        scheduleRefresh();
+      });
+    },
+    [mode, replaceState, scheduleRefresh],
+  );
+
+  const value = useMemo(
+    () => ({
+      state,
+      dispatch,
+      ready,
+      mode,
+      userId,
+      email: mode === 'cloud' ? session?.user.email ?? null : null,
+      refresh,
+      syncError,
+      clearSyncError: () => setSyncError(null),
+      loadError,
+    }),
+    [state, dispatch, ready, mode, userId, session, refresh, syncError, loadError],
+  );
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 

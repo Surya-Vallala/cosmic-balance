@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { resetInviteCode } from '../cloud/api';
 import { groupNet } from '../logic';
 import { approxRate, currency, CURRENCY_CODES, parseNumber } from '../money';
 import type { ScreenProps } from '../navigation';
@@ -22,7 +23,8 @@ import {
 } from '../ui';
 
 export default function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>) {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, mode, userId, refresh } = useStore();
+  const [linkNote, setLinkNote] = useState<string | null>(null);
   const meId = state.meId!;
   const existing = state.groups.find((g) => g.id === route.params.groupId);
 
@@ -170,7 +172,7 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
         error={touched && !name.trim() ? 'Give the group a name.' : null}
       />
 
-      <Text style={ui.label}>Who's in it</Text>
+      <Text style={ui.label}>Who’s in it</Text>
       <View style={s.chips}>
         <Chip
           label="You"
@@ -289,7 +291,36 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
         />
       </View>
 
-      {existing ? (
+      {existing && mode === 'cloud' ? (
+        <>
+          <SectionTitle>Invite link</SectionTitle>
+          <Text style={[ui.hint, { marginTop: 0, marginBottom: space.md }]}>
+            Anyone with the group’s link can join it. If it was sent to the wrong person, make a new one: the old link
+            stops working, and people already in the group stay in it.
+          </Text>
+          <ConfirmButton
+            title="Reset invite link"
+            confirmTitle="Tap again to make a new link"
+            onConfirm={async () => {
+              setLinkNote(null);
+              try {
+                await resetInviteCode(existing.id);
+                await refresh();
+                setLinkNote('New link ready. Share it from the group with Invite friends.');
+              } catch (e) {
+                setLinkNote(e instanceof Error ? e.message : 'Couldn’t make a new link. Try again.');
+              }
+            }}
+          />
+          {linkNote ? <Text style={ui.hint}>{linkNote}</Text> : null}
+        </>
+      ) : null}
+
+      {existing && mode === 'cloud' && existing.createdBy !== userId ? (
+        <Text style={[ui.hint, { textAlign: 'center', marginTop: space.xl }]}>
+          Only the person who created this group can delete it.
+        </Text>
+      ) : existing ? (
         <View style={{ marginTop: space.xl }}>
           <ConfirmButton
             title="Delete group"
@@ -300,7 +331,7 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
             }}
           />
           {hasBalance ? (
-            <Text style={[ui.hint, { textAlign: 'center' }]}>Some balances in this group aren't settled yet.</Text>
+            <Text style={[ui.hint, { textAlign: 'center' }]}>Some balances in this group aren’t settled yet.</Text>
           ) : null}
         </View>
       ) : null}

@@ -1,12 +1,12 @@
 import React, { useLayoutEffect, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { relativeDay } from '../dates';
 import { CURRENCY_CODES, formatMoney, paiseToInput, parseRupees } from '../money';
 import type { ScreenProps } from '../navigation';
 import { uid, useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { CurrencyCode } from '../types';
-import { AmountInput, Avatar, Button, Chip, ConfirmButton, CurrencyButton, CurrencyPicker, Empty, Field, List, Row, Screen, styles as ui } from '../ui';
+import { AmountInput, Avatar, Button, Chip, ConfirmButton, CurrencyPicker, Empty, Field, List, Row, Screen, styles as ui } from '../ui';
 
 export default function TransferScreen({ navigation, route }: ScreenProps<'Transfer'>) {
   const { state, dispatch } = useStore();

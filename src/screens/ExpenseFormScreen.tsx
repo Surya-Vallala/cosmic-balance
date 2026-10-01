@@ -1,5 +1,5 @@
-import React, { useLayoutEffect, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useLayoutEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { computePayers, computeSplit, groupCurrencies, toBase } from '../logic';
 import { formatMoney, paiseToInput, parseRupees } from '../money';
 import type { ScreenProps } from '../navigation';
@@ -12,7 +12,6 @@ import {
   Button,
   Chip,
   ConfirmButton,
-  CurrencyButton,
   CurrencyPicker,
   Field,
   List,
@@ -61,10 +60,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
 
   const amount = parseRupees(amountText);
   const participants = splitType === 'equal' ? members.filter((m) => selected.includes(m)) : members;
-  const result = useMemo(
-    () => (amount ? computeSplit(amount, splitType, participants, inputs, cur) : null),
-    [amount, splitType, participants.join(','), inputs, cur],
-  );
+  const result = amount ? computeSplit(amount, splitType, participants, inputs, cur) : null;
 
   const payerResult = multiPay && amount ? computePayers(amount, members, payerInputs, cur) : null;
   const payers: Record<string, number> | null = multiPay
@@ -180,7 +176,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
       {multiPay ? (
         <>
           <Text style={[ui.hint, { marginBottom: space.md }]}>
-            Type how much each person paid. Leave it blank for anyone who didn't pay.
+            Type how much each person paid. Leave it blank for anyone who didn’t pay.
           </Text>
           <List>
             {members.map((m, i) => (

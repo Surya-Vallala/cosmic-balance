@@ -1,17 +1,20 @@
-import React, { useLayoutEffect } from 'react';
+import React, { useLayoutEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { inviteLink } from '../cloud/config';
 import { Supernova } from '../cosmos';
 import { shortDate } from '../dates';
 import { groupCurrencies, groupDebts, groupNet, groupSummary } from '../logic';
 import { formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
+import { shareText } from '../share';
 import { useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import { Avatar, Button, Empty, equivalents, List, rateText, Row, Screen, SectionTitle } from '../ui';
 
 export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>) {
-  const { state } = useStore();
+  const { state, mode } = useStore();
   const nameOf = useName();
+  const [inviteNote, setInviteNote] = useState<string | null>(null);
   const meId = state.meId!;
   const group = state.groups.find((g) => g.id === route.params.groupId);
 
@@ -85,6 +88,25 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
       </Text>
 
       <List style={{ marginTop: space.lg }}>
+        {mode === 'cloud' && group.inviteCode ? (
+          <Row
+            title="Invite friends"
+            subtitle={inviteNote ?? inviteSubtitle(group.memberIds.filter((id) => id !== meId && !state.people[id]?.userId).map(nameOf))}
+            right={<Text style={s.chevron}>›</Text>}
+            onPress={async () => {
+              const result = await shareText(
+                `Join “${group.name}” on Cosmic Khaata so we can split our expenses: ${inviteLink(group.inviteCode!)}`,
+              );
+              setInviteNote(
+                result === 'copied'
+                  ? 'Link copied. Paste it into WhatsApp or any chat.'
+                  : result === 'failed'
+                    ? `Copy this link: ${inviteLink(group.inviteCode!)}`
+                    : null,
+              );
+            }}
+          />
+        ) : null}
         <Row
           title="Group summary"
           subtitle="Total spending, and what each person paid, used and owes"
@@ -194,6 +216,13 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
       )}
     </Screen>
   );
+}
+
+/** Who still needs to accept the invite. */
+function inviteSubtitle(waiting: string[]): string {
+  if (waiting.length === 0) return 'Send the link so friends can join and add expenses too.';
+  const names = waiting.length <= 2 ? waiting.join(' and ') : `${waiting.slice(0, 2).join(', ')} and ${waiting.length - 2} more`;
+  return `${names} ${waiting.length === 1 ? "hasn't" : "haven't"} joined yet. Send them the link.`;
 }
 
 /** "Ravi", "You and Ravi", or "3 people" for an expense's payers. */

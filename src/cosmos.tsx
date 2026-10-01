@@ -3,7 +3,7 @@
 // - a black hole, for empty screens
 // - a pulsar, for loading and for sending reminders (a signal going out)
 // - a supernova, for the moment a balance is settled
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AccessibilityInfo, Animated, Easing, Platform, StyleProp, View, ViewStyle } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Line, Path, RadialGradient, Stop } from 'react-native-svg';
 import { colors } from './theme';
@@ -103,7 +103,7 @@ export function BlackHole({ size = 96 }: { size?: number }) {
 /** A neutron star sweeping two narrow beams. Turns slowly unless motion is reduced. */
 export function Pulsar({ size = 40, spinning = true }: { size?: number; spinning?: boolean }) {
   const reduced = useReducedMotion();
-  const turn = useRef(new Animated.Value(0)).current;
+  const [turn] = useState(() => new Animated.Value(0));
   useEffect(() => {
     if (!spinning || reduced) return;
     const loop = Animated.loop(
@@ -144,7 +144,7 @@ const RAYS = [0, 28, 61, 90, 118, 152, 180, 209, 241, 270, 298, 331];
  */
 export function Supernova({ size = 72, burst = false }: { size?: number; burst?: boolean }) {
   const reduced = useReducedMotion();
-  const grow = useRef(new Animated.Value(burst ? 0 : 1)).current;
+  const [grow] = useState(() => new Animated.Value(burst ? 0 : 1));
   useEffect(() => {
     if (!burst) return;
     if (reduced) {

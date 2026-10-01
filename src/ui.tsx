@@ -87,25 +87,28 @@ function footerItems(footer: React.ReactNode): React.ReactNode[] {
 // ---------------------------------------------------------------------------
 // Cosmic motifs
 
+/** Seeded star positions, so the field is the same on every render. */
+function makeStars(count: number, seed: number) {
+  let x = seed;
+  const rnd = () => {
+    x = (x * 16807) % 2147483647;
+    return (x - 1) / 2147483646;
+  };
+  return Array.from({ length: count }, () => {
+    const size = rnd() < 0.85 ? 1.5 : 2.5;
+    return {
+      left: `${rnd() * 100}%` as const,
+      top: `${rnd() * 100}%` as const,
+      size,
+      opacity: 0.2 + rnd() * 0.6,
+      warm: rnd() < 0.12,
+    };
+  });
+}
+
 /** A sparse, fixed starfield. Positions come from a seed so they never jump. */
 export function Starfield({ count = 28, seed = 7 }: { count?: number; seed?: number }) {
-  const stars = useMemo(() => {
-    let x = seed;
-    const rnd = () => {
-      x = (x * 16807) % 2147483647;
-      return (x - 1) / 2147483646;
-    };
-    return Array.from({ length: count }, () => {
-      const size = rnd() < 0.85 ? 1.5 : 2.5;
-      return {
-        left: `${rnd() * 100}%` as const,
-        top: `${rnd() * 100}%` as const,
-        size,
-        opacity: 0.2 + rnd() * 0.6,
-        warm: rnd() < 0.12,
-      };
-    });
-  }, [count, seed]);
+  const stars = useMemo(() => makeStars(count, seed), [count, seed]);
   return (
     <View pointerEvents="none" style={StyleSheet.absoluteFill}>
       {stars.map((st, i) => (
@@ -293,7 +296,11 @@ export function ConfirmButton({ title, confirmTitle, onConfirm }: { title: strin
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={() => (armed ? onConfirm() : setArmed(true))}
+      onPress={() => {
+        if (!armed) return setArmed(true);
+        setArmed(false);
+        onConfirm();
+      }}
       style={({ pressed }) => [
         styles.button,
         { borderColor: colors.owe, backgroundColor: armed ? colors.owe : 'transparent' },

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Linking, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Linking, Share, StyleSheet, Text, View } from 'react-native';
 import { Pulsar, Supernova } from '../cosmos';
 import { relativeDay } from '../dates';
 import { fromBase, groupCurrencies, toBase } from '../logic';
@@ -14,7 +14,6 @@ import {
   Button,
   Chip,
   ConfirmButton,
-  CurrencyButton,
   CurrencyPicker,
   equivalents,
   rateText,
@@ -252,7 +251,7 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
           Worth {formatMoney(baseAmountOf(amount), base)} at {rateText(group, cur)}
         </Text>
       ) : suggestedBase && currencies.length === 1 ? (
-        <Text style={ui.hint}>Suggested from the group's balances: {formatMoney(suggestedBase, base)}</Text>
+        <Text style={ui.hint}>Suggested from the group’s balances: {formatMoney(suggestedBase, base)}</Text>
       ) : null}
 
       {from === meId && to && !samePerson ? (
@@ -277,7 +276,7 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
           ) : null
         ) : cur === 'INR' ? (
           <Text style={[ui.hint, { marginTop: space.lg }]} onPress={() => navigation.navigate('FriendForm', { personId: to })}>
-            Add {nameOf(to)}'s UPI ID to pay them straight from here. <Text style={s.link}>Add UPI ID</Text>
+            Add {nameOf(to)}’s UPI ID to pay them straight from here. <Text style={s.link}>Add UPI ID</Text>
           </Text>
         ) : null
       ) : null}
@@ -303,7 +302,7 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
       ) : null}
 
       <Text style={[ui.hint, { marginTop: space.xl }]}>
-        Recording a payment only updates balances in Cosmic Khaata. It doesn't move any money.
+        Recording a payment only updates balances in Cosmic Khaata. It doesn’t move any money.
       </Text>
 
       <CurrencyPicker

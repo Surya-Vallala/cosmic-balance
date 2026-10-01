@@ -4,14 +4,13 @@ import { Pulsar, Supernova } from '../cosmos';
 import { friendBalances, nonZero, planOverallSettlement } from '../logic';
 import { currency as currencyInfo, formatMoney, paiseToDecimalString } from '../money';
 import type { ScreenProps } from '../navigation';
-import { uid, useName, useStore } from '../store';
+import { uid, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { Payment } from '../types';
 import { BalanceTag, Button, Empty, GroupBadge, List, Row, Screen, Segmented, styles as ui } from '../ui';
 
 export default function SettleAllScreen({ navigation, route }: ScreenProps<'SettleAll'>) {
   const { state, dispatch } = useStore();
-  const nameOf = useName();
   const meId = state.meId!;
   const friend = state.people[route.params.friendId];
   const [done, setDone] = useState(false);

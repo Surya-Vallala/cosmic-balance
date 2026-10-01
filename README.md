@@ -4,7 +4,12 @@ A Splitwise-style app for splitting bills with friends. Runs on Android and iPho
 
 Developed by **Tesseract Studio**, Hyderabad. Suggestions and questions: tools@tesseractstudio.co
 
-This is the **prototype**: everything is stored on the phone itself, with no accounts and no server yet. Each person's phone holds its own copy of the data, so for now one person keeps track for the group. The next step is a shared backend (Supabase) so everyone sees the same groups live.
+Live app: **https://surya-vallala.github.io/cosmic-khaata/**
+
+There are two ways to use it:
+
+- **Continue with Google**: groups are saved online and shared. Everyone in a group sees the same expenses, can add their own, and sees changes from others within a second or two.
+- **Use on this phone only**: no account; everything stays on the phone. Good for trying it out. Data here isn't moved to an account later.
 
 ## What it does
 
@@ -22,6 +27,15 @@ This is the **prototype**: everything is stored on the phone itself, with no acc
 - **Sample data** on the welcome screen so you can explore before adding real expenses.
 - **Export to spreadsheet** (Your profile): a CSV of every expense, payment and transfer, for backups.
 - **About page**: developed by Tesseract Studio, with the contact email.
+
+## Sharing with friends
+
+1. Sign in with Google and start a group. Add friends by name (they don't need an account yet).
+2. In the group, tap **Invite friends** and send the link on WhatsApp (or copy it).
+3. A friend opens the link, signs in with Google and taps **I'm Ravi** (their name in the list). Everything already recorded for "Ravi" becomes theirs: expenses, payments and transfers. If they aren't in the list, they can join as themselves.
+4. From then on they manage their own name and UPI ID, and see the group live.
+
+Who sees what: you see a group only if you're in it. A transfer outside groups is seen only by the two people in it (and whoever recorded it). Only the person who created a group can delete it. Anyone with an invite link can join that group, so share it only with the friends in it; **Reset link** in the group's settings makes the old link stop working.
 
 ## Look and feel
 
@@ -47,6 +61,22 @@ WEB_BASE_URL=/cosmic-khaata npx expo export --platform web
 
 and upload the `dist` folder.
 
+## Setting up the shared backend (one time)
+
+The backend is a free Supabase project (`cosmic-khaata`). The app only contains the project URL and the **publishable** key, which are safe to ship; the database rules decide what each person can see. Never put the secret key (`sb_secret_…` or `service_role`) in the app.
+
+1. **Database**: in Supabase, open **SQL Editor → New query**, paste all of [`supabase/schema.sql`](supabase/schema.sql) and press **Run**. It's safe to run again after changes.
+2. **Google sign-in**: in [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials, create an **OAuth client ID** of type *Web application* with
+   - Authorised JavaScript origin: `https://surya-vallala.github.io`
+   - Authorised redirect URI: `https://jwmnmrmocilfrqohhezf.supabase.co/auth/v1/callback`
+
+   Then in Supabase → **Authentication → Sign In / Providers → Google**, turn it on and paste the client ID and client secret. The secret stays in Supabase.
+3. **Where to send people back**: Supabase → **Authentication → URL Configuration**: set *Site URL* to `https://surya-vallala.github.io/cosmic-khaata/` and add the same address under *Redirect URLs*.
+
+To point a build at a different Supabase project, set `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_KEY` and `EXPO_PUBLIC_APP_URL` (see `src/cloud/config.ts`).
+
+Sign-in with Google currently works in the web app (installed to the home screen). In Expo Go and native builds, use "on this phone only" for now.
+
 ## Run it from your computer (for development)
 
 You need [Node.js](https://nodejs.org) (LTS version) on your computer and the **Expo Go** app on your phone (Play Store or App Store).
@@ -64,18 +94,23 @@ To try it in a browser instead: `npx expo start --web`.
 ## Project layout
 
 ```
-App.tsx                  navigation + font loading
+App.tsx                  sign-in gate, navigation, font loading
 src/
-  logic.ts               splitting, balances, debt simplification (pure functions)
+  auth.tsx               Google sign-in, "this phone only" mode, invite links
+  cloud/                 Supabase client, loading/saving rows, live updates
+  share.ts               share sheet / copy for invite links               splitting, balances, debt simplification (pure functions)
   logic.test.ts          tests for the money maths   (npx vitest run)
   money.ts               currencies, formatting (Indian grouping for ₹) and parsing
-  store.tsx              app state, saving to the phone, sample data
+  store.tsx              app state; saves to the phone or syncs online
   theme.ts, ui.tsx       colours, type, shared components
   cosmos.tsx             Libra, black hole, pulsar and supernova illustrations
   export.ts              spreadsheet (CSV) export
-  screens/               Onboarding, Home, Group, GroupSummary, GroupForm,
-                         ExpenseForm, SettleUp, Friend, FriendForm,
+  screens/               Welcome, Join, Onboarding, Home, Group, GroupSummary,
+                         GroupForm, ExpenseForm, SettleUp, Friend, FriendForm,
                          Transfer, SettleAll, About
+supabase/
+  schema.sql             tables, access rules, join/claim functions
+  test_rls.py            checks the access rules against a local Postgres
 public/                  web app manifest, icons and page template
 ```
 
@@ -83,11 +118,13 @@ public/                  web app manifest, icons and page template
 
 ```bash
 npx tsc --noEmit     # type-check
-npx vitest run       # 35 tests: splits, payers, currencies, rounding, balances, summary, transfers
+npx expo lint        # lint
+npx vitest run       # 45 tests: splits, payers, currencies, rounding, balances, summary,
+                     # transfers, and converting between app state and database rows
 ```
 
 ## Next steps
 
-1. **Shared data**: Supabase (free plan, Mumbai region) for Sign in with Google and a shared database, with group invite links over WhatsApp, so every friend sees the same groups and can add expenses themselves.
+1. **Google sign-in in native builds** (needs a development build and the Android/iOS OAuth clients).
 2. **Optional native builds**: Android APKs via EAS Build (free plan). A real iPhone app needs TestFlight or the App Store (Apple Developer account, US$99/year); the installable web app avoids that.
 3. Receipt photos, expense categories, editable dates, and recurring expenses like rent.

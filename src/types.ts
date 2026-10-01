@@ -8,6 +8,11 @@ export interface Person {
   id: Id;
   name: string;
   upiId?: string;
+  /**
+   * Shared mode only: the account behind this person. Set for people who
+   * have signed in; empty for friends added by name who haven't joined yet.
+   */
+  userId?: string | null;
 }
 
 export interface Group {
@@ -24,6 +29,10 @@ export interface Group {
    * ฿1 = ₹2.87). Empty for a single-currency group.
    */
   rates: Record<CurrencyCode, number>;
+  /** Shared mode only: code for the group's invite link. */
+  inviteCode?: string;
+  /** Shared mode only: account that created the group (only it can delete). */
+  createdBy?: string | null;
 }
 
 export type SplitType = 'equal' | 'exact' | 'percent' | 'shares';
