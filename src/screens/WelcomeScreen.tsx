@@ -8,7 +8,8 @@ import { sheetStyle, StudioCredit, WelcomeHero } from './WelcomeHero';
 
 /** First screen: sign in to share with friends, or use the app on this phone only. */
 export default function WelcomeScreen() {
-  const { signInWithGoogle, chooseThisPhoneOnly, authError, pendingJoin } = useAuth();
+  const { signInWithGoogle, chooseThisPhoneOnly, authError, pendingJoin, pendingInvite } = useAuth();
+  const invited = !!(pendingJoin || pendingInvite);
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
 
@@ -16,10 +17,16 @@ export default function WelcomeScreen() {
     <ScrollView style={{ flex: 1, backgroundColor: colors.space }} contentContainerStyle={{ flexGrow: 1 }}>
       <WelcomeHero />
       <View style={[sheetStyle, { paddingBottom: insets.bottom + space.xl }]}>
-        {pendingJoin ? (
+        {invited ? (
           <View style={s.invite}>
-            <Text style={s.inviteTitle}>You’ve been invited to a group</Text>
-            <Text style={s.inviteBody}>Sign in with Google to join it and see what’s been shared.</Text>
+            <Text style={s.inviteTitle}>
+              {pendingInvite ? 'A friend invited you to Cosmic Khaata' : 'You’ve been invited to a group'}
+            </Text>
+            <Text style={s.inviteBody}>
+              {pendingInvite
+                ? 'Sign in with Google to see what’s been shared with you. Any Google account works.'
+                : 'Sign in with Google to join it and see what’s been shared.'}
+            </Text>
           </View>
         ) : null}
 
@@ -35,7 +42,7 @@ export default function WelcomeScreen() {
         <Text style={s.note}>Your groups are saved online and shared with the friends in them.</Text>
         {authError ? <Text style={ui.error}>{authError}</Text> : null}
 
-        {!pendingJoin ? (
+        {!invited ? (
           <>
             <View style={s.or}>
               <View style={s.rule} />

@@ -11,6 +11,8 @@
 --              automatically when they sign in.
 --   contacts   your friends list: people you added who aren't necessarily in
 --              a group with you.
+--   person_invites  personal invite links (sent on WhatsApp) for friends who
+--              haven't joined; opening one and signing in links that person.
 --   groups     member_ids lists the people in the group.
 --   expenses   the expense itself is stored as JSON in `data`.
 --   payments   settle-up payments inside a group (JSON in `data`).
@@ -99,6 +101,16 @@ create table if not exists public.contacts (
 );
 create index if not exists contacts_person_idx on public.contacts (person_id);
 
+-- Added in version 3: one personal invite code per friend who hasn't joined.
+-- Read and written only by the functions below; used once, then gone with
+-- the placeholder.
+create table if not exists public.person_invites (
+  person_id uuid primary key references public.people (id) on delete cascade,
+  code text not null unique,
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
 -- ---------------------------------------------------------------------------
 -- Helpers (security definer so policies can use them without recursion)
 
@@ -149,6 +161,7 @@ alter table public.expenses enable row level security;
 alter table public.payments enable row level security;
 alter table public.transfers enable row level security;
 alter table public.contacts enable row level security;
+alter table public.person_invites enable row level security; -- no policies: functions only
 
 drop policy if exists people_select on public.people;
 create policy people_select on public.people for select to authenticated
@@ -223,6 +236,7 @@ grant update (name, simplify_debts, base_currency, rates, updated_at) on public.
 revoke update on public.people from anon, authenticated;
 grant update (name, upi_id) on public.people to authenticated;
 revoke insert, update, delete, truncate on public.contacts from anon, authenticated;
+revoke all on public.person_invites from anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Internal functions (not callable from the app)
@@ -486,6 +500,89 @@ begin
   return members;
 end $$;
 
+-- Personal invite codes for friends who haven't joined (created when first
+-- asked for). Only for placeholders you can see.
+create or replace function public.person_invite_codes(p_people uuid[])
+returns table (person_id uuid, code text)
+language plpgsql security definer set search_path = public as $$
+declare
+  x uuid;
+begin
+  if public.my_person_id() is null then
+    raise exception 'Not signed in';
+  end if;
+  foreach x in array coalesce(p_people, '{}'::uuid[]) loop
+    continue when not exists (select 1 from public.people p where p.id = x and p.user_id is null)
+                  or not public.can_see_person(x);
+    insert into public.person_invites (person_id, code, created_by)
+    values (x, left(replace(gen_random_uuid()::text, '-', ''), 12), auth.uid())
+    on conflict on constraint person_invites_pkey do nothing;
+  end loop;
+  return query
+    select i.person_id, i.code from public.person_invites i
+    where i.person_id = any (coalesce(p_people, '{}'::uuid[])) and public.can_see_person(i.person_id);
+end $$;
+
+-- What someone opening a personal invite sees before accepting it.
+create or replace function public.person_invite_preview(p_code text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  i public.person_invites;
+  ph public.people;
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in';
+  end if;
+  select * into i from public.person_invites where code = p_code;
+  if not found then
+    return null;
+  end if;
+  select * into ph from public.people where id = i.person_id;
+  return jsonb_build_object(
+    'name', ph.name,
+    'invited_by', coalesce((select name from public.people where user_id = i.created_by), 'A friend'),
+    'mine', i.created_by = auth.uid(),
+    'groups', coalesce((select jsonb_agg(g.name order by g.created_at) from public.groups g
+                        where ph.id = any (g.member_ids)), '[]'::jsonb)
+  );
+end $$;
+
+-- Accept a personal invite: become the person it was made for, with
+-- everything recorded for them. Works once.
+create or replace function public.claim_person_invite(p_code text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := public.my_person_id();
+  i public.person_invites;
+  ph public.people;
+  first_group uuid;
+begin
+  if me is null then
+    raise exception 'Not signed in';
+  end if;
+  select * into i from public.person_invites where code = p_code for update;
+  if not found then
+    raise exception 'This invite link has already been used. Ask whoever sent it to add you again.';
+  end if;
+  select * into ph from public.people where id = i.person_id;
+  if ph.user_id is not null then
+    raise exception 'This invite link has already been used. Ask whoever sent it to add you again.';
+  end if;
+  if i.created_by = auth.uid() then
+    raise exception 'This is your own invite for %. Send it to them on WhatsApp.', ph.name;
+  end if;
+  select g.id into first_group from public.groups g where ph.id = any (g.member_ids) order by g.created_at limit 1;
+  perform public.merge_person(ph.id, me);
+  -- The person who sent it and you are friends, even without a group.
+  if i.created_by is not null then
+    insert into public.contacts (owner, person_id) values (i.created_by, me) on conflict do nothing;
+    insert into public.contacts (owner, person_id)
+      select auth.uid(), p.id from public.people p where p.user_id = i.created_by
+      on conflict do nothing;
+  end if;
+  return jsonb_build_object('group_id', first_group);
+end $$;
+
 -- What someone opening an invite link sees before joining.
 create or replace function public.group_preview(p_code text)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
@@ -563,12 +660,14 @@ revoke all on function public.merge_person(uuid, uuid), public.person_for_accoun
 revoke all on function public.my_person_id(), public.is_member(uuid), public.can_see_person(uuid),
   public.ensure_me(text), public.add_person_by_email(text, text), public.set_person_email(uuid, text),
   public.set_group_members(uuid, uuid[], uuid[]), public.group_preview(text),
-  public.join_group(text, uuid), public.reset_invite_code(uuid)
+  public.join_group(text, uuid), public.reset_invite_code(uuid),
+  public.person_invite_codes(uuid[]), public.person_invite_preview(text), public.claim_person_invite(text)
   from public, anon;
 grant execute on function public.my_person_id(), public.is_member(uuid), public.can_see_person(uuid),
   public.ensure_me(text), public.add_person_by_email(text, text), public.set_person_email(uuid, text),
   public.set_group_members(uuid, uuid[], uuid[]), public.group_preview(text),
-  public.join_group(text, uuid), public.reset_invite_code(uuid)
+  public.join_group(text, uuid), public.reset_invite_code(uuid),
+  public.person_invite_codes(uuid[]), public.person_invite_preview(text), public.claim_person_invite(text)
   to authenticated;
 
 -- ---------------------------------------------------------------------------

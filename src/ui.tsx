@@ -250,6 +250,7 @@ export function Button({
   disabled,
   style,
   small,
+  accessibilityLabel,
 }: {
   title: string;
   onPress: () => void;
@@ -257,11 +258,13 @@ export function Button({
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
   small?: boolean;
+  accessibilityLabel?: string;
 }) {
   const v = buttonVariants[variant];
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [

@@ -2,6 +2,7 @@ import React, { useLayoutEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Supernova } from '../cosmos';
 import { relativeDay } from '../dates';
+import { useWhatsAppInvites } from '../invites';
 import { friendBalanceByGroup, friendBalances, nonZero } from '../logic';
 import { formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
@@ -13,6 +14,8 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
   const { state, mode } = useStore();
   const meId = state.meId!;
   const friend = state.people[route.params.friendId];
+  const notJoined = mode === 'cloud' && !!friend && !friend.userId;
+  const invites = useWhatsAppInvites(notJoined && friend ? [friend] : []);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -60,10 +63,26 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
           <Text style={s.upi}>
             {friend.email
               ? `Not on Cosmic Khaata yet. Linked automatically when they sign in with ${friend.email}.`
-              : 'Not on Cosmic Khaata yet. Tap Edit to add their Gmail, or send them a group’s invite link.'}
+              : 'Not on Cosmic Khaata yet. Send them their invite on WhatsApp.'}
           </Text>
         ) : null}
       </View>
+
+      {notJoined ? (
+        <View style={{ marginTop: space.lg }}>
+          <Button
+            title={invites.ready(friend.id) || invites.error ? 'Invite on WhatsApp' : 'Preparing invite…'}
+            disabled={!invites.ready(friend.id)}
+            onPress={() => invites.invite(friend)}
+          />
+          <Text style={s.inviteNote}>
+            {invites.error ??
+              (invites.hasPhone(friend.id)
+                ? `Opens your WhatsApp chat with ${friend.name}. Their own link signs them in as ${friend.name}.`
+                : `Opens WhatsApp so you can pick ${friend.name}. Their own link signs them in as ${friend.name}.`)}
+          </Text>
+        </View>
+      ) : null}
 
       <View style={s.actions}>
         {anythingToSettle ? (
@@ -74,7 +93,7 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
         <View style={{ flex: 1 }}>
           <Button
             title="Transfer money"
-            variant={anythingToSettle ? 'secondary' : 'primary'}
+            variant={anythingToSettle || notJoined ? 'secondary' : 'primary'}
             onPress={() => navigation.navigate('Transfer', { from: meId, to: friend.id })}
           />
         </View>
@@ -163,6 +182,7 @@ const s = StyleSheet.create({
   headerLink: { color: colors.star, fontSize: 16, fontWeight: '600', paddingHorizontal: 8 },
   headline: { fontFamily: fonts.light, fontSize: 24, textAlign: 'center', marginTop: space.md, lineHeight: 30 },
   caption: { fontSize: 13, color: colors.muted, marginTop: 4 },
+  inviteNote: { fontSize: 12, color: colors.muted, textAlign: 'center', marginTop: space.sm, lineHeight: 16 },
   upi: { fontSize: 13, color: colors.muted, marginTop: 4, textAlign: 'center', lineHeight: 18 },
   actions: { flexDirection: 'row', gap: space.sm, marginTop: space.xl },
   none: { fontSize: 14, color: colors.muted, lineHeight: 20, marginHorizontal: space.xs },

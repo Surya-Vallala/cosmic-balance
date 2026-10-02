@@ -1,10 +1,12 @@
 import React, { useLayoutEffect, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { resetInviteCode } from '../cloud/api';
+import { canPickContacts, pickContacts } from '../contacts';
 import { isEmail } from '../emails';
 import { groupNet } from '../logic';
 import { approxRate, currency, CURRENCY_CODES, parseNumber } from '../money';
 import type { ScreenProps } from '../navigation';
+import { rememberPhone } from '../phones';
 import { uid, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { CurrencyCode } from '../types';
@@ -28,6 +30,7 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
   const [linkNote, setLinkNote] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [addNote, setAddNote] = useState<string | null>(null);
+  const [pickable] = useState(canPickContacts);
   const meId = state.meId!;
   const existing = state.groups.find((g) => g.id === route.params.groupId);
 
@@ -123,12 +126,58 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
       dispatch({ type: 'savePerson', person: { id, name: n } });
       setMembers((m) => [...m, id]);
       if (mode === 'cloud') {
-        setAddNote(
-          `Added ${n} by name, so this group shows up only for the people already in it. To let ${n} see it, add their Gmail address instead, or send them the invite link after saving.`,
-        );
+        setAddNote(`Added ${n}. After saving, send ${n} their invite on WhatsApp from the group.`);
       }
     }
     setNewFriend('');
+  };
+
+  // Several friends at once from the phone's contacts (Chrome on Android).
+  const addFromContacts = async () => {
+    const picked = await pickContacts(true);
+    if (!picked.length) return;
+    setError(null);
+    setAddNote(null);
+    setAdding(true);
+    const added: string[] = [];
+    const notJoined: string[] = [];
+    for (const c of picked) {
+      let id: string | null = null;
+      // A Gmail saved with the contact links their account straight away.
+      if (mode === 'cloud' && c.email && isEmail(c.email)) {
+        try {
+          const p = await addPersonByEmail(c.email, c.name || undefined);
+          if (p.id !== meId) {
+            id = p.id;
+            if (!p.userId) notJoined.push(p.name);
+          }
+        } catch {
+          id = null; // fall back to adding them by name
+        }
+      }
+      if (!id) {
+        const n = (c.name || c.phone || '').trim();
+        if (!n) continue;
+        const match = friends.find((f) => f.name.toLowerCase() === n.toLowerCase());
+        if (match) {
+          id = match.id;
+          if (!match.userId) notJoined.push(match.name);
+        } else {
+          id = uid();
+          dispatch({ type: 'savePerson', person: { id, name: n } });
+          notJoined.push(n);
+        }
+      }
+      await rememberPhone(id, c.phone);
+      added.push(id);
+    }
+    setMembers((m) => [...m, ...added.filter((id) => !m.includes(id))]);
+    setAdding(false);
+    const who = notJoined.length <= 2 ? notJoined.join(' and ') : `${notJoined.slice(0, 2).join(', ')} and ${notJoined.length - 2} more`;
+    setAddNote(
+      `Added ${added.length} from your contacts.` +
+        (mode === 'cloud' && notJoined.length ? ` After saving, send ${who} their invite on WhatsApp from the group.` : ''),
+    );
   };
 
   // You can leave a group (shared mode) unless you're in its expenses or payments.
@@ -231,7 +280,7 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
         <TextInput
           value={newFriend}
           onChangeText={setNewFriend}
-          placeholder={mode === 'cloud' ? 'Gmail address or name' : 'Add someone new by name'}
+          placeholder={mode === 'cloud' ? 'Name or Gmail address' : 'Add someone new by name'}
           placeholderTextColor={colors.placeholder}
           keyboardAppearance="dark"
           selectionColor={colors.star}
@@ -241,7 +290,7 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
           autoCapitalize={mode === 'cloud' ? 'none' : 'words'}
           autoCorrect={false}
           keyboardType={mode === 'cloud' ? 'email-address' : 'default'}
-          accessibilityLabel={mode === 'cloud' ? 'Add a friend by Gmail address or name' : 'Add someone new by name'}
+          accessibilityLabel={mode === 'cloud' ? 'Add a friend by name or Gmail address' : 'Add someone new by name'}
         />
         <Button
           title={adding ? 'Adding…' : 'Add'}
@@ -252,10 +301,23 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
           style={{ minHeight: 48 }}
         />
       </View>
+      {pickable ? (
+        <Button
+          title="Add from contacts"
+          small
+          variant="secondary"
+          onPress={addFromContacts}
+          disabled={adding}
+          style={{ marginTop: space.sm, alignSelf: 'flex-start' }}
+        />
+      ) : null}
       {mode === 'cloud' ? (
         <Text style={ui.hint}>
-          {addNote ?? 'Add friends by their Gmail address so the group shows up on their phone too.'}
+          {addNote ??
+            'Add friends by name, then send each one their invite on WhatsApp from the group. If you know their Gmail, add that instead and they’ll see the group straight away.'}
         </Text>
+      ) : addNote ? (
+        <Text style={ui.hint}>{addNote}</Text>
       ) : null}
 
       <SectionTitle>Currencies</SectionTitle>

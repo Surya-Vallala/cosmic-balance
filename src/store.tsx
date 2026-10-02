@@ -8,6 +8,7 @@ import {
   CloudError,
   ensureMe,
   fetchRows,
+  personInviteCodes,
   setPersonEmail as apiSetPersonEmail,
   subscribe,
 } from './cloud/api';
@@ -218,6 +219,8 @@ interface Store {
   addPersonByEmail: (email: string, name?: string) => Promise<Person>;
   /** Shared mode: give a friend who hasn't joined an email. Returns the id they have afterwards. */
   setPersonEmail: (personId: Id, email: string) => Promise<Id>;
+  /** Shared mode: personal invite codes for friends who haven't joined, by person id. */
+  inviteCodes: (personIds: Id[]) => Promise<Record<Id, string>>;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -535,7 +538,7 @@ export function StoreProvider({
   // Looking someone up by email needs a connection; say so at once rather than queueing it.
   const needOnline = (e: unknown): never => {
     if (e instanceof CloudError && e.retry) {
-      throw new CloudError('You need a connection to add someone by Gmail. Try again when you’re online.', true);
+      throw new CloudError('You need a connection for this. Try again when you’re online.', true);
     }
     throw e;
   };
@@ -562,6 +565,20 @@ export function StoreProvider({
     [whenSaved],
   );
 
+  // Invite codes don't change until used, so ask for each one once.
+  const codeCache = useRef<Record<Id, string>>({});
+  const inviteCodes = useCallback(
+    async (personIds: Id[]) => {
+      const missing = personIds.filter((id) => !codeCache.current[id]);
+      if (missing.length) {
+        if (!offlineRef.current) await whenSaved();
+        Object.assign(codeCache.current, await personInviteCodes(missing).catch(needOnline));
+      }
+      return Object.fromEntries(personIds.filter((id) => codeCache.current[id]).map((id) => [id, codeCache.current[id]]));
+    },
+    [whenSaved],
+  );
+
   const value = useMemo(
     () => ({
       state,
@@ -578,8 +595,24 @@ export function StoreProvider({
       offline,
       addPersonByEmail,
       setPersonEmail,
+      inviteCodes,
     }),
-    [state, dispatch, ready, mode, userId, session, refresh, syncError, loadError, unsaved, offline, addPersonByEmail, setPersonEmail],
+    [
+      state,
+      dispatch,
+      ready,
+      mode,
+      userId,
+      session,
+      refresh,
+      syncError,
+      loadError,
+      unsaved,
+      offline,
+      addPersonByEmail,
+      setPersonEmail,
+      inviteCodes,
+    ],
   );
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }

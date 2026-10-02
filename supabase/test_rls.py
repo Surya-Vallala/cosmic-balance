@@ -275,6 +275,43 @@ conn.commit()
 check(one('stranger', 'select id from public.ensure_me(%s)', ('Stranger',)) == me_x,
       'signing in still works when a clashing placeholder exists')
 
+# --- Personal invite links (sent on WhatsApp) ---------------------------------------------
+kiran_ph = str(uuid.uuid4())
+as_user('surya', 'insert into public.people (id, name) values (%s, %s)', (kiran_ph, 'Kiran'), fetch=False)
+as_user('surya', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (g, [kiran_ph], []))
+codes = as_user('surya', 'select person_id::text, code from public.person_invite_codes(%s::uuid[])', ([kiran_ph, me_p],))
+check(len(codes) == 1 and codes[0][0] == kiran_ph and len(codes[0][1]) == 12,
+      'invite codes are made only for friends who haven’t joined')
+kcode = codes[0][1]
+check(as_user('surya', 'select code from public.person_invite_codes(%s::uuid[])', ([kiran_ph],))[0][0] == kcode,
+      'asking again gives the same link')
+check(as_user('ravi', 'select code from public.person_invite_codes(%s::uuid[])', ([kiran_ph],))[0][0] == kcode,
+      'another group member gets the same link for Kiran')
+check(as_user('stranger', 'select code from public.person_invite_codes(%s::uuid[])', ([solo],)) == [],
+      'a stranger cannot get links for your friends')
+check(fails('surya', 'select * from public.person_invites'), 'invite codes cannot be read directly')
+check(fails_anon('select public.person_invite_preview(%s)', (kcode,)), 'signed-out visitors cannot look up an invite')
+check(error('surya', 'select public.claim_person_invite(%s)', (kcode,)).startswith('This is your own invite for Kiran'),
+      'you cannot accept your own invite by mistake')
+sign_up('kiran', 'kiran.k@gmail.com')
+me_k = one('kiran', 'select id from public.ensure_me(%s)', ('Kiran K',))
+pv = one('kiran', 'select public.person_invite_preview(%s)', (kcode,))
+check(pv['name'] == 'Kiran' and pv['invited_by'] == 'Surya' and not pv['mine'] and pv['groups'] == ['Thailand trip'],
+      'the invite shows who invited you, as whom, and to which groups')
+res = one('kiran', 'select public.claim_person_invite(%s)', (kcode,))
+check(res['group_id'] == g and len(as_user('kiran', 'select * from public.groups')) == 1,
+      'accepting the invite puts Kiran in the group as the person Surya added')
+check(one('surya', 'select count(*) from public.people where id = %s', (kiran_ph,)) == 0 and
+      'Kiran K' in names('surya'), 'the placeholder is replaced by Kiran’s account')
+check(fails('stranger', 'select public.claim_person_invite(%s)', (kcode,)) and
+      one('stranger', 'select public.person_invite_preview(%s)', (kcode,)) is None, 'an invite link works only once')
+friend_ph = one('surya', 'select id from public.add_person_by_email(%s, %s)', ('meera@gmail.com', 'Meera'))
+mcode = as_user('surya', 'select code from public.person_invite_codes(%s::uuid[])', ([friend_ph],))[0][0]
+sign_up('meera', 'meera.other@gmail.com')
+one('meera', 'select id from public.ensure_me(%s)', ('Meera',))
+check(one('meera', 'select public.claim_person_invite(%s)', (mcode,))['group_id'] is None and 'Surya' in names('meera'),
+      'an invite for a friend outside groups makes you friends, whatever Gmail you sign in with')
+
 # --- Settle-up payments cascade with their settlement ----------------------------------
 s_id = str(uuid.uuid4())
 as_user('surya', 'insert into public.transfers (id, from_person, to_person, data) values (%s, %s, %s, %s)',

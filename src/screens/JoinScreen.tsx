@@ -1,15 +1,152 @@
 import React, { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../auth';
-import { CloudError, groupPreview, joinGroup, type GroupPreview } from '../cloud/api';
+import {
+  claimPersonInvite,
+  CloudError,
+  groupPreview,
+  joinGroup,
+  personInvitePreview,
+  type GroupPreview,
+  type PersonInvitePreview,
+} from '../cloud/api';
 import type { ScreenProps } from '../navigation';
 import { useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import { Avatar, Button, Empty, GroupBadge, List, Row, Screen, SectionTitle, styles as ui } from '../ui';
 
-/** Opened from an invite link: join the group, optionally as the person already added for you. */
+/** Opened from an invite link: a group's link, or a personal one sent to one friend. */
 export default function JoinScreen({ navigation, route }: ScreenProps<'Join'>) {
-  const { code } = route.params;
+  if (route.params.invite) return <PersonInvite code={route.params.invite} navigation={navigation} />;
+  return <GroupInvite code={route.params.code ?? ''} navigation={navigation} />;
+}
+
+type Nav = ScreenProps<'Join'>['navigation'];
+
+/** A personal invite: accept it to become the person your friend added, with everything recorded for them. */
+function PersonInvite({ code, navigation }: { code: string; navigation: Nav }) {
+  const { refresh } = useStore();
+  const { clearPendingInvite } = useAuth();
+  const [preview, setPreview] = useState<PersonInvitePreview | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: 'Your invite' });
+  }, [navigation]);
+
+  const fetchPreview = useCallback(() => {
+    personInvitePreview(code)
+      .then((p) => {
+        setPreview(p);
+        clearPendingInvite();
+      })
+      .catch((e) => {
+        const retry = e instanceof CloudError && e.retry;
+        setError(e instanceof Error ? e.message : String(e));
+        setCanRetry(retry);
+        setPreview(null);
+        if (!retry) clearPendingInvite();
+      });
+  }, [code, clearPendingInvite]);
+
+  useEffect(() => {
+    fetchPreview();
+  }, [fetchPreview]);
+
+  const accept = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const groupId = await claimPersonInvite(code);
+      await refresh();
+      if (groupId) navigation.replace('Group', { groupId });
+      else navigation.popToTop();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+    }
+  };
+
+  if (preview === undefined && !error) {
+    return (
+      <Screen>
+        <Text style={s.loading}>Looking up your invite…</Text>
+      </Screen>
+    );
+  }
+
+  if (!preview) {
+    return (
+      <Screen>
+        <Empty
+          title={canRetry ? 'Couldn’t open the invite' : 'This invite link doesn’t work'}
+          body={error ?? 'It may have been used already. Ask whoever sent it to invite you again.'}
+          action={
+            <View style={{ gap: space.sm }}>
+              {canRetry ? (
+                <Button
+                  title="Try again"
+                  onPress={() => {
+                    setError(null);
+                    setCanRetry(false);
+                    setPreview(undefined);
+                    fetchPreview();
+                  }}
+                />
+              ) : null}
+              <Button title="Go to my groups" variant="secondary" onPress={() => navigation.popToTop()} />
+            </View>
+          }
+        />
+      </Screen>
+    );
+  }
+
+  if (preview.mine) {
+    return (
+      <Screen>
+        <Empty
+          title={`This is your invite for ${preview.name}`}
+          body={`Send it to ${preview.name} on WhatsApp. When they open it and sign in, everything you recorded for them becomes theirs.`}
+          action={<Button title="Go to my groups" variant="secondary" onPress={() => navigation.popToTop()} />}
+        />
+      </Screen>
+    );
+  }
+
+  const groups = preview.groups;
+  const where =
+    groups.length === 0
+      ? 'You’ll be friends on Cosmic Khaata, so you can record money between you.'
+      : `You’ll join ${groups.length === 1 ? groups[0] : `${groups.slice(0, -1).join(', ')} and ${groups[groups.length - 1]}`}, with everything already recorded for you.`;
+
+  return (
+    <Screen>
+      <View style={s.head}>
+        <Avatar name={preview.name} size={64} />
+        <Text style={s.title}>
+          {preview.invited_by} added you as “{preview.name}”
+        </Text>
+        <Text style={s.meta}>{where}</Text>
+      </View>
+      <Button title={busy ? 'Joining…' : 'Accept invite'} disabled={busy} onPress={accept} />
+      <View style={{ marginTop: space.sm }}>
+        <Button
+          title="This isn’t me"
+          variant="ghost"
+          disabled={busy}
+          onPress={() => navigation.popToTop()}
+        />
+      </View>
+      {error ? <Text style={[ui.error, { textAlign: 'center' }]}>{error}</Text> : null}
+    </Screen>
+  );
+}
+
+/** A group's invite link: join the group, optionally as the person already added for you. */
+function GroupInvite({ code, navigation }: { code: string; navigation: Nav }) {
   const { refresh, state } = useStore();
   const { clearPendingJoin } = useAuth();
   const [preview, setPreview] = useState<GroupPreview | null | undefined>(undefined);

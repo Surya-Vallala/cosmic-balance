@@ -30,13 +30,21 @@ There are two ways to use it:
 
 ## Sharing with friends
 
-**Add friends by their Gmail address** (in a group's "Who's in it", or Friends → Add a friend):
+**Invite friends on WhatsApp** (the easy way; you don't need their Gmail):
+
+1. Add them by name, in a group's "Who's in it" or under Friends → Add a friend. On Android, **Pick from contacts** / **Add from contacts** fills in names (and numbers) from your phone; the phone shares only the contacts you pick.
+2. The group (under **Not joined yet**) or their friend page has a **WhatsApp** button. It opens WhatsApp with a message and a link made just for them. If you saved their number, it opens your chat with them; otherwise you pick the chat. You tap Send.
+3. They open the link and sign in with Google (any Google account). They see who invited them and to which groups, tap **Accept invite**, and everything recorded for them becomes theirs. Each link works once.
+
+Numbers you save for WhatsApp stay on your phone only; they're never put in the shared database.
+
+**Or add friends by their Gmail address** (in a group's "Who's in it", or Friends → Add a friend):
 
 - If they already use Cosmic Khaata, they're added as themselves and see the group straight away.
 - If they don't yet, they're added as "not joined yet". The first time they sign in with that Gmail, they land in the group with everything recorded for them. No link needed.
 - Gmail addresses match however they're typed: `S.Urya+trip@GMail.com` is `surya@gmail.com`.
 
-**Or send an invite link**: in the group, tap **Invite friends** and send the link on WhatsApp (or copy it). A friend opens it, signs in with Google and taps **I'm Ravi** (the name you added them by). Everything recorded for "Ravi" becomes theirs. If they aren't in the list, they can join as themselves. A friend added by name only can also be linked later: open them under Friends → Edit and add their Gmail.
+**Or share the group link**: in the group, tap **Share the group link** and send it on WhatsApp (or copy it). A friend opens it, signs in with Google and taps **I'm Ravi** (the name you added them by). Everything recorded for "Ravi" becomes theirs. If they aren't in the list, they can join as themselves. A friend added by name only can also be linked later: open them under Friends → Edit and add their Gmail.
 
 Who sees what: you see a group only if you're in it. A transfer outside groups is seen only by the two people in it (and whoever recorded it). Friends added by Gmail see each other in their Friends lists. Only the person who created a group can delete it; anyone else can leave a group they have no expenses in. Anyone with an invite link can join that group, so share it only with the friends in it; **Reset invite link** in the group's settings makes the old link stop working.
 
@@ -103,7 +111,11 @@ App.tsx                  sign-in gate, navigation, font loading
 src/
   auth.tsx               Google sign-in, "this phone only" mode, invite links
   cloud/                 Supabase client, loading/saving rows, live updates
-  share.ts               share sheet / copy for invite links               splitting, balances, debt simplification (pure functions)
+  share.ts               share sheet / copy for invite links
+  invites.ts, whatsapp.ts  personal WhatsApp invites; wa.me links and phone numbers
+  contacts.ts, phones.ts picking friends from contacts (Android); numbers kept on this phone
+  emails.ts              email address check
+  logic.ts               splitting, balances, debt simplification (pure functions)
   logic.test.ts          tests for the money maths   (npx vitest run)
   money.ts               currencies, formatting (Indian grouping for ₹) and parsing
   store.tsx              app state; saves to the phone or syncs online
@@ -114,8 +126,10 @@ src/
                          GroupForm, ExpenseForm, SettleUp, Friend, FriendForm,
                          Transfer, SettleAll, About
 supabase/
-  schema.sql             tables, access rules, join/claim functions
+  schema.sql             tables, access rules, invite/join/claim functions (re-run to upgrade)
   test_rls.py            checks the access rules against a local Postgres
+  test_upgrade.py        upgrading a database made with the first version
+  test_stub.sql          a small stand-in for Supabase's auth, for those tests
 public/                  web app manifest, icons and page template
 ```
 
@@ -126,9 +140,9 @@ Free Supabase projects pause after about a week with no activity. The workflow i
 ```bash
 npx tsc --noEmit                 # type-check
 npx expo lint                    # lint
-npx vitest run                   # 47 tests: splits, payers, currencies, rounding, balances, summary,
-                                 # transfers, and converting between app state and database rows
-python3 supabase/test_rls.py     # 69 checks of who can see and change what (needs Postgres 16 on :5433)
+npx vitest run                   # 55 tests: splits, payers, currencies, rounding, balances, summary,
+                                 # transfers, database rows, WhatsApp links and phone numbers
+python3 supabase/test_rls.py     # 81 checks of who can see and change what (needs Postgres 16 on :5433)
 python3 supabase/test_upgrade.py # upgrading a database made with the first version
 ```
 

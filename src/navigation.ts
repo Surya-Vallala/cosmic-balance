@@ -13,7 +13,7 @@ export type RootStackParamList = {
   Transfer: { transferId?: string; from?: string; to?: string };
   SettleAll: { friendId: string; currency?: string };
   About: undefined;
-  Join: { code: string };
+  Join: { code?: string; invite?: string };
 };
 
 export type ScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, T>;

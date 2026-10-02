@@ -8,15 +8,19 @@ import { supabase } from './cloud/client';
 
 const MODE_KEY = 'cosmic-khaata:mode';
 const PENDING_JOIN_KEY = 'cosmic-khaata:pending-join';
+const PENDING_INVITE_KEY = 'cosmic-khaata:pending-invite';
 
 export type Mode = 'loading' | 'welcome' | 'local' | 'cloud';
 
 interface Auth {
   mode: Mode;
   session: Session | null;
-  /** Invite code from a link that hasn't been used yet. */
+  /** Group invite code from a link that hasn't been used yet. */
   pendingJoin: string | null;
   clearPendingJoin: () => void;
+  /** Personal invite code (sent to one friend on WhatsApp) that hasn't been used yet. */
+  pendingInvite: string | null;
+  clearPendingInvite: () => void;
   authError: string | null;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -26,17 +30,22 @@ interface Auth {
 
 const AuthContext = createContext<Auth | null>(null);
 
-/** Read ?join=CODE (invite) and sign-in errors from the address, then tidy it. */
-function readUrl(): { join: string | null; error: string | null } {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') return { join: null, error: null };
+/**
+ * Read ?join=CODE (group invite), ?invite=CODE (personal invite) and sign-in
+ * errors from the address, then tidy it.
+ */
+function readUrl(): { join: string | null; invite: string | null; error: string | null } {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return { join: null, invite: null, error: null };
   const url = new URL(window.location.href);
   const join = url.searchParams.get('join');
+  const invite = url.searchParams.get('invite');
   const error = url.searchParams.get('error_description') || url.hash.match(/error_description=([^&]+)/)?.[1] || null;
-  if (join) {
+  if (join || invite) {
     url.searchParams.delete('join');
+    url.searchParams.delete('invite');
     window.history.replaceState(null, '', url.pathname + (url.search === '?' ? '' : url.search) + url.hash);
   }
-  return { join, error: error ? decodeURIComponent(error.replace(/\+/g, ' ')) : null };
+  return { join, invite, error: error ? decodeURIComponent(error.replace(/\+/g, ' ')) : null };
 }
 
 // Read once, when the app loads: the address is tidied straight after.
@@ -47,17 +56,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [sessionChecked, setSessionChecked] = useState(false);
   const [localChosen, setLocalChosen] = useState<boolean | null>(null);
   const [pendingJoin, setPendingJoin] = useState<string | null>(null);
+  const [pendingInvite, setPendingInvite] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(initialUrl.error);
 
   useEffect(() => {
-    const { join } = initialUrl;
+    const { join, invite } = initialUrl;
     (async () => {
       try {
+        // Kept on the phone so the invite survives the trip to Google and back.
         if (join) {
           await AsyncStorage.setItem(PENDING_JOIN_KEY, join);
           setPendingJoin(join);
         } else {
           setPendingJoin(await AsyncStorage.getItem(PENDING_JOIN_KEY));
+        }
+        if (invite) {
+          await AsyncStorage.setItem(PENDING_INVITE_KEY, invite);
+          setPendingInvite(invite);
+        } else {
+          setPendingInvite(await AsyncStorage.getItem(PENDING_INVITE_KEY));
         }
         setLocalChosen((await AsyncStorage.getItem(MODE_KEY)) === 'local');
       } catch {
@@ -109,6 +126,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPendingJoin(null);
   }, []);
 
+  const clearPendingInvite = useCallback(() => {
+    AsyncStorage.removeItem(PENDING_INVITE_KEY).catch(() => {});
+    setPendingInvite(null);
+  }, []);
+
   const mode: Mode = !sessionChecked || localChosen === null ? 'loading' : session ? 'cloud' : localChosen ? 'local' : 'welcome';
 
   const value = useMemo(
@@ -117,13 +139,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       session,
       pendingJoin,
       clearPendingJoin,
+      pendingInvite,
+      clearPendingInvite,
       authError,
       signInWithGoogle,
       signOut,
       chooseThisPhoneOnly,
       backToWelcome,
     }),
-    [mode, session, pendingJoin, clearPendingJoin, authError, signInWithGoogle, signOut, chooseThisPhoneOnly, backToWelcome],
+    [
+      mode,
+      session,
+      pendingJoin,
+      clearPendingJoin,
+      pendingInvite,
+      clearPendingInvite,
+      authError,
+      signInWithGoogle,
+      signOut,
+      chooseThisPhoneOnly,
+      backToWelcome,
+    ],
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

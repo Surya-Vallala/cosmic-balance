@@ -149,6 +149,30 @@ export function setPersonEmail(personId: string, email: string): Promise<string>
   return rpc<string>('set_person_email', { p_person: personId, p_email: email.trim() });
 }
 
+/** Personal invite codes for friends who haven't joined, by person id (made on first request). */
+export async function personInviteCodes(personIds: string[]): Promise<Record<string, string>> {
+  if (personIds.length === 0) return {};
+  const rows = await rpc<{ person_id: string; code: string }[]>('person_invite_codes', { p_people: personIds });
+  return Object.fromEntries((rows ?? []).map((r) => [r.person_id, r.code]));
+}
+
+export interface PersonInvitePreview {
+  name: string;
+  invited_by: string;
+  mine: boolean;
+  groups: string[];
+}
+
+export async function personInvitePreview(code: string): Promise<PersonInvitePreview | null> {
+  return (await rpc<PersonInvitePreview | null>('person_invite_preview', { p_code: code })) ?? null;
+}
+
+/** Accept a personal invite. Returns the first group it puts you in, if any. */
+export async function claimPersonInvite(code: string): Promise<string | null> {
+  const res = await rpc<{ group_id: string | null }>('claim_person_invite', { p_code: code });
+  return res?.group_id ?? null;
+}
+
 export interface GroupPreview {
   id: string;
   name: string;

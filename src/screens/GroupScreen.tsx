@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { inviteLink } from '../cloud/config';
+import { useWhatsAppInvites } from '../invites';
 import { Supernova } from '../cosmos';
 import { shortDate } from '../dates';
 import { groupCurrencies, groupDebts, groupNet, groupSummary } from '../logic';
@@ -9,6 +10,7 @@ import type { ScreenProps } from '../navigation';
 import { shareText } from '../share';
 import { useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
+import type { Person } from '../types';
 import { Avatar, Button, Empty, equivalents, List, rateText, Row, Screen, SectionTitle } from '../ui';
 
 export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>) {
@@ -17,6 +19,15 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
   const [inviteNote, setInviteNote] = useState<string | null>(null);
   const meId = state.meId!;
   const group = state.groups.find((g) => g.id === route.params.groupId);
+  // Members who haven't joined yet, to invite one by one on WhatsApp.
+  const waiting: Person[] =
+    mode === 'cloud' && group
+      ? group.memberIds
+          .filter((id) => id !== meId)
+          .map((id) => state.people[id])
+          .filter((p): p is Person => !!p && !p.userId)
+      : [];
+  const invites = useWhatsAppInvites(waiting);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -90,15 +101,8 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
       <List style={{ marginTop: space.lg }}>
         {mode === 'cloud' && group.inviteCode ? (
           <Row
-            title="Invite friends"
-            subtitle={
-              inviteNote ??
-              inviteSubtitle(
-                group.memberIds
-                  .filter((id) => id !== meId && !state.people[id]?.userId)
-                  .map((id) => ({ name: nameOf(id), hasEmail: !!state.people[id]?.email })),
-              )
-            }
+            title="Share the group link"
+            subtitle={inviteNote ?? 'For friends you haven’t added yet. Anyone with the link can join this group.'}
             right={<Text style={s.chevron}>›</Text>}
             onPress={async () => {
               const result = await shareText(
@@ -122,6 +126,39 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
           last
         />
       </List>
+
+      {waiting.length > 0 ? (
+        <>
+          <SectionTitle>Not joined yet</SectionTitle>
+          <List>
+            {waiting.map((p, i) => (
+              <View key={p.id} style={[s.debtRow, i < waiting.length - 1 && s.divider]}>
+                <Avatar name={p.name} size={32} />
+                <View style={{ flex: 1, marginLeft: space.md, marginRight: space.sm }}>
+                  <Text style={s.debtText}>{p.name}</Text>
+                  <Text style={s.waitingNote}>
+                    {p.email
+                      ? `Joins by signing in with ${p.email}, or send the invite`
+                      : 'Send their invite on WhatsApp'}
+                  </Text>
+                </View>
+                <Button
+                  small
+                  title="WhatsApp"
+                  variant="secondary"
+                  disabled={!invites.ready(p.id)}
+                  accessibilityLabel={`Invite ${p.name} on WhatsApp`}
+                  onPress={() => invites.invite(p)}
+                />
+              </View>
+            ))}
+          </List>
+          <Text style={s.note}>
+            {invites.error ??
+              'Each friend gets their own link. When they open it and sign in with Google, everything recorded for them becomes theirs.'}
+          </Text>
+        </>
+      ) : null}
 
       {debts.length > 0 ? (
         <>
@@ -226,17 +263,6 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
 }
 
 /** Who still needs to accept the invite. */
-function inviteSubtitle(waiting: { name: string; hasEmail: boolean }[]): string {
-  if (waiting.length === 0) return 'Send the link so friends can join and add expenses too.';
-  const list = (names: string[]) =>
-    names.length <= 2 ? names.join(' and ') : `${names.slice(0, 2).join(', ')} and ${names.length - 2} more`;
-  const noEmail = waiting.filter((w) => !w.hasEmail).map((w) => w.name);
-  if (noEmail.length === 0) {
-    return `${list(waiting.map((w) => w.name))} will see this group when they sign in with their Gmail. You can also send them the link.`;
-  }
-  return `${list(noEmail)} ${noEmail.length === 1 ? "hasn't" : "haven't"} joined yet. Send them the link, or add their Gmail.`;
-}
-
 /** "Ravi", "You and Ravi", or "3 people" for an expense's payers. */
 function payersLabel(ids: string[], meId: string, nameOf: (id: string) => string): string {
   const sorted = [...ids].sort((a, b) => (a === meId ? -1 : b === meId ? 1 : 0));
@@ -263,6 +289,7 @@ const s = StyleSheet.create({
   debtRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: space.lg },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
   debtText: { fontSize: 15, color: colors.text },
+  waitingNote: { fontSize: 12, color: colors.muted, marginTop: 2, lineHeight: 16 },
   debtAmount: { fontFamily: fonts.medium, fontSize: 16, marginTop: 2 },
   debtEquiv: { fontSize: 12, color: colors.muted, marginTop: 1 },
   note: { fontSize: 12, color: colors.muted, marginTop: space.sm, marginHorizontal: space.xs },

@@ -14,3 +14,8 @@ export const APP_URL = process.env.EXPO_PUBLIC_APP_URL || 'https://surya-vallala
 export function inviteLink(code: string): string {
   return `${APP_URL}?join=${encodeURIComponent(code)}`;
 }
+
+/** A friend's personal invite: opening it and signing in makes them that person. */
+export function personInviteLink(code: string): string {
+  return `${APP_URL}?invite=${encodeURIComponent(code)}`;
+}

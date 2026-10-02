@@ -174,15 +174,15 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { fai
 
 function AppNavigator() {
   const { state, ready, mode, loadError } = useStore();
-  const { pendingJoin } = useAuth();
+  const { pendingJoin, pendingInvite } = useAuth();
   const [navReady, setNavReady] = useState(false);
 
   // Open the join screen for an invite link once signed in and loaded.
   useEffect(() => {
-    if (mode === 'cloud' && ready && state.meId && pendingJoin && navReady && navigationRef.isReady()) {
-      navigationRef.navigate('Join', { code: pendingJoin });
-    }
-  }, [mode, ready, state.meId, pendingJoin, navReady]);
+    if (mode !== 'cloud' || !ready || !state.meId || !navReady || !navigationRef.isReady()) return;
+    if (pendingInvite) navigationRef.navigate('Join', { invite: pendingInvite });
+    else if (pendingJoin) navigationRef.navigate('Join', { code: pendingJoin });
+  }, [mode, ready, state.meId, pendingJoin, pendingInvite, navReady]);
 
   if (!ready) return <Loading />;
   if (mode === 'cloud' && !state.meId) return loadError ? <LoadFailed /> : <Loading />;

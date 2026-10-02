@@ -1,12 +1,15 @@
-import React, { useLayoutEffect, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../auth';
+import { canPickContacts, pickContacts } from '../contacts';
 import { isEmail } from '../emails';
 import { exportCsv } from '../export';
 import type { ScreenProps } from '../navigation';
+import { phonesFor, rememberPhone } from '../phones';
 import { uid, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import { Avatar, Button, ConfirmButton, Field, List, Row, Screen, SectionTitle, styles as ui } from '../ui';
+import { normalizePhone } from '../whatsapp';
 
 const UPI_PATTERN = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$/;
 
@@ -27,6 +30,26 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
   const [gmail, setGmail] = useState(existing?.email ?? '');
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Their WhatsApp number, kept on this phone only, so invites open their chat.
+  const [phone, setPhone] = useState('');
+  const [pickable] = useState(canPickContacts);
+
+  useEffect(() => {
+    if (!showGmail || !existing) return;
+    let live = true;
+    phonesFor([existing.id]).then((p) => live && p[existing.id] && setPhone(p[existing.id]));
+    return () => {
+      live = false;
+    };
+  }, [showGmail, existing]);
+
+  const pickContact = async () => {
+    const [c] = await pickContacts(false);
+    if (!c) return;
+    if (c.name) setName(c.name);
+    if (showGmail && c.email) setGmail(c.email);
+    if (c.phone) setPhone(c.phone);
+  };
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -40,11 +63,27 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
   const nameError = touched && nameMissing ? 'Enter a name.' : null;
   const upiError = touched && upiTrim && !UPI_PATTERN.test(upiTrim) ? 'A UPI ID looks like name@bank, for example ravi@okaxis.' : null;
   const gmailError = touched && gmailTrim && !isEmail(gmailTrim) ? 'An email address looks like name@gmail.com.' : null;
+  const phoneTrim = showGmail ? phone.trim() : '';
+  const phoneError =
+    touched && phoneTrim && !normalizePhone(phoneTrim) ? 'Enter a mobile number, for example +91 98765 43210.' : null;
+
+  /** After adding someone in shared mode who isn't on the app yet, show their page with the WhatsApp invite. */
+  const done = async (personId: string, hasAccount: boolean) => {
+    if (phoneTrim) await rememberPhone(personId, phoneTrim); // saved before their page reads it
+    if (mode === 'cloud' && !existing && !hasAccount) navigation.replace('Friend', { friendId: personId });
+    else navigation.goBack();
+  };
 
   const save = async () => {
     setTouched(true);
     setSaveError(null);
-    if (nameMissing || (upiTrim && !UPI_PATTERN.test(upiTrim)) || (gmailTrim && !isEmail(gmailTrim))) return;
+    if (
+      nameMissing ||
+      (upiTrim && !UPI_PATTERN.test(upiTrim)) ||
+      (gmailTrim && !isEmail(gmailTrim)) ||
+      (phoneTrim && !normalizePhone(phoneTrim))
+    )
+      return;
 
     // New friend with a Gmail: their account if they have one, else linked when they sign in.
     if (showGmail && !existing && gmailTrim) {
@@ -52,7 +91,7 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
       try {
         const p = await addPersonByEmail(gmailTrim, name.trim() || undefined);
         if (upiTrim && !p.userId && !p.upiId) dispatch({ type: 'savePerson', person: { ...p, upiId: upiTrim } });
-        navigation.goBack();
+        await done(p.id, !!p.userId);
       } catch (e) {
         setSaveError(e instanceof Error ? e.message : 'Couldn’t add them. Try again.');
         setBusy(false);
@@ -74,6 +113,7 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
         const now = await setPersonEmail(existing.id, gmailTrim);
         if (now !== existing.id) {
           // They already had an account: everything recorded for this name is now theirs.
+          if (phoneTrim) await rememberPhone(now, phoneTrim);
           navigation.popToTop();
           navigation.navigate('Friend', { friendId: now });
           return;
@@ -84,7 +124,7 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
         return;
       }
     }
-    navigation.goBack();
+    await done(id, !!existing?.userId);
   };
 
   if (readOnly && existing) {
@@ -109,6 +149,12 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
         <Button title={busy ? 'Saving…' : existing ? 'Save changes' : 'Add friend'} onPress={save} disabled={busy} />
       }
     >
+      {!existing && !isMe && pickable ? (
+        <View style={{ marginBottom: space.lg }}>
+          <Button title="Pick from contacts" variant="secondary" onPress={pickContact} />
+          <Text style={ui.hint}>Your phone shares only the contact you pick.</Text>
+        </View>
+      ) : null}
       <Field
         label={isMe ? 'Your name' : 'Name'}
         value={name}
@@ -119,7 +165,19 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
       />
       {showGmail ? (
         <Field
-          label="Gmail address"
+          label="WhatsApp number (optional)"
+          value={phone}
+          onChangeText={setPhone}
+          placeholder="+91 98765 43210"
+          keyboardType="phone-pad"
+          autoCorrect={false}
+          error={phoneError}
+          hint="Kept on this phone only, never shared. Lets their WhatsApp invite open your chat with them."
+        />
+      ) : null}
+      {showGmail ? (
+        <Field
+          label="Gmail address (optional)"
           value={gmail}
           onChangeText={setGmail}
           placeholder="ravi@gmail.com"
@@ -130,7 +188,7 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
           hint={
             existing
               ? 'When they sign in with this Gmail, they take over this name with everything recorded for them. If they already use Cosmic Khaata, that happens straight away.'
-              : 'The email they sign in with. If they already use Cosmic Khaata they’re added as themselves; if not, they’re linked as soon as they sign in. Without it, they only show up for you until they join with an invite link.'
+              : 'Only if you know it. They’re added as themselves if they already use Cosmic Khaata, or linked when they sign in. Without it, send them their invite on WhatsApp after adding them.'
           }
         />
       ) : null}
