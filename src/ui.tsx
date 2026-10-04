@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Image,
   Modal,
   Platform,
   Pressable,
@@ -131,25 +130,39 @@ export function Starfield({ count = 28, seed = 7 }: { count?: number; seed?: num
   );
 }
 
-const logoTile = require('../assets/logo-tile.png');
-
-/** The Cosmic Balance logo (a ringed planet), on its white tile. */
+/** Logo mark: a ring with a small moon on it. */
 export function OrbitMark({ size = 18 }: { size?: number }) {
+  const moon = Math.max(5, size * 0.32);
   return (
-    <Image
-      source={logoTile}
-      style={{ width: size, height: size }}
-      resizeMode="contain"
-      accessibilityRole="image"
-      accessibilityLabel="Cosmic Balance logo"
-    />
+    <View style={{ width: size, height: size }}>
+      <View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderWidth: 1.5,
+          borderColor: colors.star,
+        }}
+      />
+      <View
+        style={{
+          position: 'absolute',
+          width: moon,
+          height: moon,
+          borderRadius: moon / 2,
+          backgroundColor: colors.star,
+          right: size * 0.146 - moon / 2,
+          top: size * 0.146 - moon / 2,
+        }}
+      />
+    </View>
   );
 }
 
 export function Wordmark({ size = 18 }: { size?: number }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: size * 0.5 }}>
-      <OrbitMark size={size * 1.6} />
+      <OrbitMark size={size * 1.05} />
       <Text style={{ fontFamily: fonts.medium, fontSize: size, color: colors.text, letterSpacing: 0.2 }}>
         cosmic balance
       </Text>
