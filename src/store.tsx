@@ -8,14 +8,17 @@ import {
   CloudError,
   ensureMe,
   fetchRows,
+  markNotificationsRead,
   personInviteCodes,
   setPersonEmail as apiSetPersonEmail,
   subscribe,
 } from './cloud/api';
 import { actionToOps, personFromRow, rowsToState, type Op } from './cloud/sync';
 import { formatMoney } from './money';
+import { refreshPushSubscription, setBadge } from './push';
 import type { Activity, AppState, Expense, Group, Id, Payment, Person, Transfer } from './types';
 
+// Storage keys keep the app's earlier name, so nothing saved on phones is lost.
 const STORAGE_KEY = 'cosmic-khaata:v1';
 // Data saved under the app's earlier names; read once and carried over.
 const LEGACY_STORAGE_KEYS = ['cosmic-split:v1', 'hisaab:v1'];
@@ -57,6 +60,7 @@ export type Action =
   | { type: 'saveTransfer'; transfer: Transfer }
   | { type: 'deleteTransfer'; id: Id }
   | { type: 'settleOverall'; settlement: Transfer; payments: Payment[] }
+  | { type: 'removeFriend'; id: Id }
   | { type: 'reset' };
 
 function nameOf(s: AppState, id: Id) {
@@ -190,6 +194,29 @@ function reducer(s: AppState, a: Action): AppState {
         activity: log(s, `${nameOf(s, t.from)} settled up with ${to}: ${formatMoney(t.amount, t.currency)}${where}`),
       };
     }
+    case 'removeFriend': {
+      const p = s.people[a.id];
+      if (!p || a.id === s.meId) return s;
+      const people = { ...s.people };
+      delete people[a.id];
+      // Money between you outside groups (it adds up to nothing) goes with them.
+      const gone = new Set(
+        s.transfers
+          .filter((t) => (t.from === s.meId && t.to === a.id) || (t.from === a.id && t.to === s.meId))
+          .map((t) => t.id),
+      );
+      return {
+        ...s,
+        people,
+        groups: s.groups.map((g) =>
+          g.memberIds.includes(a.id) ? { ...g, memberIds: g.memberIds.filter((x) => x !== a.id) } : g,
+        ),
+        transfers: s.transfers.filter((t) => !gone.has(t.id)),
+        payments: s.payments.filter((x) => !x.settlementId || !gone.has(x.settlementId)),
+        joinRequests: s.joinRequests?.filter((r) => r.personId !== a.id),
+        activity: log(s, `You removed ${p.name} from your friends`),
+      };
+    }
     case 'reset':
       return emptyState;
   }
@@ -221,6 +248,8 @@ interface Store {
   setPersonEmail: (personId: Id, email: string) => Promise<Id>;
   /** Shared mode: personal invite codes for friends who haven't joined, by person id. */
   inviteCodes: (personIds: Id[]) => Promise<Record<Id, string>>;
+  /** Shared mode: you've seen your notifications. */
+  markNoticesRead: () => void;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -565,6 +594,24 @@ export function StoreProvider({
     [whenSaved],
   );
 
+  const markNoticesRead = useCallback(() => {
+    const s = stateRef.current;
+    if (!s.notices?.some((n) => !n.read)) return;
+    replaceState({ ...s, notices: s.notices.map((n) => (n.read ? n : { ...n, read: true })) });
+    markNotificationsRead().catch(() => {});
+  }, [replaceState]);
+
+  // The number on the app icon follows unread notifications.
+  const unread = state.notices?.filter((n) => !n.read).length ?? 0;
+  useEffect(() => {
+    if (mode === 'cloud' && ready) setBadge(unread);
+  }, [mode, ready, unread]);
+
+  // A phone that already gets notifications: keep the server's copy current.
+  useEffect(() => {
+    if (mode === 'cloud' && session) void refreshPushSubscription();
+  }, [mode, session?.user.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Invite codes don't change until used, so ask for each one once.
   const codeCache = useRef<Record<Id, string>>({});
   const inviteCodes = useCallback(
@@ -596,6 +643,7 @@ export function StoreProvider({
       addPersonByEmail,
       setPersonEmail,
       inviteCodes,
+      markNoticesRead,
     }),
     [
       state,
@@ -612,6 +660,7 @@ export function StoreProvider({
       addPersonByEmail,
       setPersonEmail,
       inviteCodes,
+      markNoticesRead,
     ],
   );
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

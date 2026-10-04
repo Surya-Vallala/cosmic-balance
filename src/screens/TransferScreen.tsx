@@ -14,7 +14,12 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
   const meId = state.meId!;
   const existing = state.transfers.find((t) => t.id === route.params.transferId);
 
-  const people = [meId, ...Object.keys(state.people).filter((id) => id !== meId).sort((a, b) => nameOf(a).localeCompare(nameOf(b)))];
+  const people = [
+    meId,
+    ...Object.keys(state.people)
+      .filter((id) => id !== meId && !state.people[id].requesting)
+      .sort((a, b) => nameOf(a).localeCompare(nameOf(b))),
+  ];
   const firstFriend = people.find((id) => id !== meId) ?? '';
 
   const [from, setFrom] = useState(existing?.from ?? route.params.from ?? meId);

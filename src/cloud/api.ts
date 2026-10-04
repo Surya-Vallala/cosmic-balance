@@ -1,8 +1,10 @@
-// Talking to Supabase: loading, writing, invites and live updates.
+// Talking to Supabase: loading, writing, invites, notifications and live updates.
 import { supabase } from './client';
 import type { GroupRow, Op, PersonRow, Rows } from './sync';
 
 const TABLES = ['people', 'groups', 'expenses', 'payments', 'transfers'] as const;
+/** Tables added later: an older database simply doesn't have them yet. */
+const OPTIONAL_TABLES = ['notifications', 'join_requests', 'contacts'] as const;
 
 /**
  * A request that didn't work. `retry` is true when it's worth trying again
@@ -21,7 +23,7 @@ export class CloudError extends Error {
 }
 
 const NEEDS_DB_UPDATE =
-  'This needs a one-time update to the shared database. Whoever set up Cosmic Khaata: in Supabase, run the latest supabase/schema.sql (see the README).';
+  'This needs a one-time update to the shared database. Whoever set up Cosmic Balance: in Supabase, run the latest supabase/schema.sql (see the README).';
 
 interface ErrorLike {
   message?: string;
@@ -53,11 +55,21 @@ export function toCloudError(error: ErrorLike | null | undefined, status?: numbe
   return new CloudError(m || 'Something went wrong. Try again.', false, error?.code);
 }
 
+const MISSING_TABLE = new Set(['PGRST205', '42P01', 'PGRST106']);
+
 /** Everything the signed-in person is allowed to see. */
 export async function fetchRows(): Promise<Rows> {
   let results;
+  let extra;
   try {
-    results = await Promise.all(TABLES.map((t) => supabase.from(t).select('*')));
+    [results, extra] = await Promise.all([
+      Promise.all(TABLES.map((t) => supabase.from(t).select('*'))),
+      Promise.all([
+        supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(100),
+        supabase.from('join_requests').select('*'),
+        supabase.from('contacts').select('person_id'),
+      ]),
+    ]);
   } catch (e) {
     throw toCloudError(e as ErrorLike, 0);
   }
@@ -66,8 +78,21 @@ export async function fetchRows(): Promise<Rows> {
     if (r.error) throw toCloudError(r.error, r.status);
     (out as Record<string, unknown>)[TABLES[i]] = r.data ?? [];
   });
+  extra.forEach((r, i) => {
+    if (r.error && !MISSING_TABLE.has(r.error.code ?? '') && r.status !== 404) throw toCloudError(r.error, r.status);
+    (out as Record<string, unknown>)[OPTIONAL_TABLES[i]] = r.error ? [] : r.data ?? [];
+  });
   return out as Rows;
 }
+
+/** Functions that may tell someone something: afterwards, ask for delivery to phones. */
+const NOTIFYING = new Set([
+  'ensure_me',
+  'set_group_members',
+  'claim_person_invite',
+  'request_join',
+  'approve_join_request',
+]);
 
 async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
   let res;
@@ -77,7 +102,47 @@ async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
     throw toCloudError(e as ErrorLike, 0);
   }
   if (res.error) throw toCloudError(res.error, res.status);
+  if (NOTIFYING.has(fn)) kickPush();
   return res.data as T;
+}
+
+// ---------------------------------------------------------------------------
+// Notifications
+
+let kickTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Ask the send-push function to deliver new notifications to phones. The
+ * database asks too; this is the backup. Harmless if there's nothing to send
+ * or the function isn't set up.
+ */
+export function kickPush(): void {
+  if (kickTimer) clearTimeout(kickTimer);
+  kickTimer = setTimeout(() => {
+    kickTimer = null;
+    supabase.functions.invoke('send-push', { body: {} }).catch(() => {});
+  }, 1500);
+}
+
+export function markNotificationsRead(): Promise<void> {
+  return rpc<void>('mark_notifications_read', {});
+}
+
+export function pushPublicKey(): Promise<string | null> {
+  return rpc<string | null>('push_public_key', {});
+}
+
+export function savePushSubscription(endpoint: string, p256dh: string, auth: string): Promise<void> {
+  return rpc<void>('save_push_subscription', { p_endpoint: endpoint, p_p256dh: p256dh, p_auth: auth });
+}
+
+export function deletePushSubscription(endpoint: string): Promise<void> {
+  return rpc<void>('delete_push_subscription', { p_endpoint: endpoint });
+}
+
+/** Make the send-push function run now (it creates the push keys on its first run). */
+export async function runSendPush(): Promise<void> {
+  await supabase.functions.invoke('send-push', { body: {} });
 }
 
 /** Your own person row, created the first time you sign in. */
@@ -117,6 +182,7 @@ export async function applyOps(ops: Op[]): Promise<void> {
       if (op.kind === 'insert' && res.error.code === '23505') continue;
       throw toCloudError(res.error, res.status);
     }
+    kickPush();
     if (op.kind === 'update' && (!res.data || (res.data as unknown[]).length === 0)) throw new CloudError(op.failMessage);
     if (op.kind === 'delete' && (!res.data || (res.data as unknown[]).length === 0)) {
       // Nothing deleted: fine if it's already gone (an earlier attempt), refused if it's still there.
@@ -177,15 +243,29 @@ export interface GroupPreview {
   id: string;
   name: string;
   is_member: boolean;
-  members: { id: string; name: string; claimed: boolean }[];
+  /** You've asked to join and are waiting. */
+  requested?: boolean;
+  /** Who lets people in. */
+  owner?: string;
+  member_count?: number;
 }
 
 export async function groupPreview(code: string): Promise<GroupPreview | null> {
   return (await rpc<GroupPreview | null>('group_preview', { p_code: code })) ?? null;
 }
 
-export function joinGroup(code: string, claim: string | null): Promise<string> {
-  return rpc<string>('join_group', { p_code: code, p_claim: claim });
+/** Ask to join a group from its link. */
+export function requestJoin(code: string): Promise<{ group_id: string; status: 'member' | 'requested' }> {
+  return rpc('request_join', { p_code: code });
+}
+
+/** Let someone in, as a new member or as `as` (the name added for them). */
+export function approveJoinRequest(requestId: string, as: string | null): Promise<string> {
+  return rpc<string>('approve_join_request', { p_request: requestId, p_as: as });
+}
+
+export function declineJoinRequest(requestId: string): Promise<void> {
+  return rpc<void>('decline_join_request', { p_request: requestId });
 }
 
 export function resetInviteCode(groupId: string): Promise<string> {
@@ -194,8 +274,8 @@ export function resetInviteCode(groupId: string): Promise<string> {
 
 /** Call `onChange` whenever anything you can see changes. Returns a stop function. */
 export function subscribe(onChange: () => void): () => void {
-  let channel = supabase.channel('cosmic-khaata-changes');
-  for (const t of TABLES) {
+  let channel = supabase.channel('cosmic-balance-changes');
+  for (const t of [...TABLES, 'join_requests', 'notifications']) {
     channel = channel.on('postgres_changes' as never, { event: '*', schema: 'public', table: t } as never, onChange);
   }
   // Coming back after the connection dropped: catch up on anything missed.

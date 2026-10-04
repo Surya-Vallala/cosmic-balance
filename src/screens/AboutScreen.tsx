@@ -5,13 +5,13 @@ import { colors, fonts, space } from '../theme';
 import { Button, Screen, Wordmark } from '../ui';
 
 export const CONTACT_EMAIL = 'tools@tesseractstudio.co';
-export const APP_VERSION = '1.0';
+export const APP_VERSION = '1.1';
 
 const logo = require('../../assets/tesseract-logo-light.png');
 
 export default function AboutScreen() {
   const email = () => {
-    const subject = encodeURIComponent('Cosmic Khaata: suggestion');
+    const subject = encodeURIComponent('Cosmic Balance: suggestion');
     Linking.openURL(`mailto:${CONTACT_EMAIL}?subject=${subject}`).catch(() => {});
   };
 
@@ -22,7 +22,7 @@ export default function AboutScreen() {
         <View style={{ marginTop: space.xl }}>
           <Wordmark size={22} />
         </View>
-        <Text style={s.lede}>Split bills with friends, anywhere on the planet, and keep the khaata balanced.</Text>
+        <Text style={s.lede}>Split bills with friends, anywhere on the planet, and keep everything in balance.</Text>
         <Text style={s.version}>Version {APP_VERSION}</Text>
       </View>
 

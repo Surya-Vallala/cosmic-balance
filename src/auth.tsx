@@ -1,10 +1,12 @@
 // Who is using the app, and how: signed in (shared data), on this phone only
 // (local data), or not decided yet (welcome screen).
+// (Storage keys keep the app's earlier name so nothing saved on phones is lost.)
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { supabase } from './cloud/client';
+import { turnOffPush } from './push';
 
 const MODE_KEY = 'cosmic-khaata:mode';
 const PENDING_JOIN_KEY = 'cosmic-khaata:pending-join';
@@ -104,6 +106,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     const id = session?.user.id;
+    // This phone stops getting this account's notifications.
+    await turnOffPush().catch(() => {});
     await supabase.auth.signOut().catch(() => {});
     // Forget this account's copy of the shared data on this phone. Changes not
     // sent yet are kept, and go out the next time this account signs in here.

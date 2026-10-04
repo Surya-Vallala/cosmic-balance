@@ -16,9 +16,10 @@ import {
   netBalances,
   pairwiseDebts,
   simplifyDebts,
+  canRemoveFriend,
 } from './logic';
 import { approxRate, formatMoney, formatRupees, parseRupees } from './money';
-import type { Expense, Group, Payment, Transfer } from './types';
+import type { AppState, Expense, Group, Payment, Transfer } from './types';
 
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
@@ -463,5 +464,76 @@ describe('transfers and overall settle-up', () => {
       settlementId: 's2',
     }));
     expect(pairBalanceInGroup('me', 'ravi', G, ex3, pays)).toBe(0);
+  });
+});
+
+describe('removing a friend', () => {
+  const g = (id: string, members: string[], createdBy: string | null = 'u-me'): Group => ({
+    id,
+    name: id === 'g1' ? 'Goa' : 'Flat',
+    memberIds: members,
+    simplifyDebts: true,
+    createdAt: '2026-01-01',
+    baseCurrency: 'INR',
+    rates: {},
+    createdBy,
+  });
+  const base = (over: Partial<AppState> = {}): AppState => ({
+    version: 1,
+    meId: 'me',
+    people: {
+      me: { id: 'me', name: 'Surya', userId: 'u-me' },
+      ravi: { id: 'ravi', name: 'Ravi', userId: 'u-ravi' },
+      priya: { id: 'priya', name: 'Priya', userId: 'u-priya' },
+    },
+    groups: [],
+    expenses: [],
+    payments: [],
+    transfers: [],
+    activity: [],
+    ...over,
+  });
+  const t = (from: string, to: string, amount: number): Transfer => ({
+    id: `${from}-${to}-${amount}`,
+    kind: 'transfer',
+    from,
+    to,
+    currency: 'INR',
+    amount,
+    date: '2026-01-01',
+    createdAt: '2026-01-01',
+  });
+
+  it('allows a friend with nothing between you', () => {
+    expect(canRemoveFriend(base(), 'ravi', 'u-me', true)).toEqual({ ok: true, leaves: [] });
+  });
+  it('allows it when money outside groups adds up to nothing', () => {
+    const r = canRemoveFriend(base({ transfers: [t('me', 'ravi', 500), t('ravi', 'me', 500)] }), 'ravi', 'u-me', true);
+    expect(r.ok).toBe(true);
+  });
+  it('refuses while you are not settled up', () => {
+    const r = canRemoveFriend(base({ transfers: [t('me', 'ravi', 500)] }), 'ravi', 'u-me', true);
+    expect(r).toEqual({ ok: false, reason: expect.stringContaining('settled up') });
+  });
+  it('takes them out of your groups that have nothing of theirs', () => {
+    const r = canRemoveFriend(base({ groups: [g('g1', ['me', 'ravi'])] }), 'ravi', 'u-me', true);
+    expect(r.ok && r.leaves.map((x) => x.id)).toEqual(['g1']);
+  });
+  it('refuses while they are in a group someone else created', () => {
+    const r = canRemoveFriend(base({ groups: [g('g1', ['me', 'ravi', 'priya'], 'u-priya')] }), 'ravi', 'u-me', true);
+    expect(r).toEqual({ ok: false, reason: expect.stringContaining('which Priya created') });
+  });
+  it('on this phone only, every group is yours', () => {
+    const r = canRemoveFriend(base({ groups: [g('g1', ['me', 'ravi'], null)] }), 'ravi', null, false);
+    expect(r.ok).toBe(true);
+  });
+  it('refuses while they are in the expenses of a group, even when settled', () => {
+    const e = exp('e1', 1000, 'ravi', { me: 500, ravi: 500 }, 'g1');
+    const pay: Payment = { id: 'p', groupId: 'g1', from: 'me', to: 'ravi', currency: 'INR', amount: 500, baseAmount: 500, date: '2026-01-02' };
+    const r = canRemoveFriend(base({ groups: [g('g1', ['me', 'ravi'])], expenses: [e], payments: [pay] }), 'ravi', 'u-me', true);
+    expect(r).toEqual({ ok: false, reason: expect.stringContaining('delete that group first') });
+  });
+  it('never removes you', () => {
+    expect(canRemoveFriend(base(), 'me', 'u-me', true).ok).toBe(false);
   });
 });

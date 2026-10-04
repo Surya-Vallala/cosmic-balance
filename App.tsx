@@ -1,12 +1,19 @@
 import { Sora_300Light, Sora_600SemiBold, Sora_700Bold, useFonts } from '@expo-google-fonts/sora';
-import { createNavigationContainerRef, DarkTheme, NavigationContainer } from '@react-navigation/native';
+import {
+  createNavigationContainerRef,
+  DarkTheme,
+  NavigationContainer,
+  type LinkingOptions,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import React, { useEffect, useState } from 'react';
 import { Platform, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from './src/auth';
 import { Pulsar } from './src/cosmos';
+import { pathFromState, stateFromPath } from './src/linking';
 import type { RootStackParamList } from './src/navigation';
+import { APP_BASE, onNotificationTap, registerServiceWorker } from './src/push';
 import AboutScreen from './src/screens/AboutScreen';
 import ExpenseFormScreen from './src/screens/ExpenseFormScreen';
 import FriendFormScreen from './src/screens/FriendFormScreen';
@@ -16,6 +23,7 @@ import GroupScreen from './src/screens/GroupScreen';
 import GroupSummaryScreen from './src/screens/GroupSummaryScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import JoinScreen from './src/screens/JoinScreen';
+import NotificationsScreen from './src/screens/NotificationsScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import SettleAllScreen from './src/screens/SettleAllScreen';
 import SettleUpScreen from './src/screens/SettleUpScreen';
@@ -27,6 +35,25 @@ import { Button, Empty } from './src/ui';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 const navigationRef = createNavigationContainerRef<RootStackParamList>();
+
+// Web: each screen gets its own history entry, so the phone's Back button goes
+// to the previous screen. (See src/linking.ts.)
+const linking: LinkingOptions<RootStackParamList> = {
+  prefixes: [],
+  getStateFromPath: (path) => stateFromPath(path) as never,
+  getPathFromState: (state) => pathFromState(APP_BASE, state as never),
+};
+
+/** Open the screen an address points at (a tapped notification). */
+function openPath(url: string) {
+  const target = stateFromPath(url.replace(/^https?:\/\/[^/]+/, '')).routes[1];
+  if (!navigationRef.isReady()) return;
+  const go = navigationRef.navigate as unknown as (name: string, params?: object) => void;
+  if (target) go(target.name, target.params);
+  else go('Home');
+}
+
+if (Platform.OS === 'web') void registerServiceWorker();
 
 const navTheme = {
   ...DarkTheme,
@@ -70,7 +97,7 @@ function LoadFailed() {
       }}
     >
       <Empty
-        title="Couldn't load your khaata"
+        title="Couldn't load your balances"
         body={loadError ?? 'Check your connection and try again.'}
         action={
           <View style={{ gap: space.sm }}>
@@ -137,7 +164,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { fai
     return { failed: true };
   }
   componentDidCatch(error: unknown) {
-    console.error('Cosmic Khaata crashed while drawing a screen', error);
+    console.error('Cosmic Balance crashed while drawing a screen', error);
   }
   render() {
     if (!this.state.failed) return <React.Fragment key={this.state.attempt}>{this.props.children}</React.Fragment>;
@@ -177,6 +204,9 @@ function AppNavigator() {
   const { pendingJoin, pendingInvite } = useAuth();
   const [navReady, setNavReady] = useState(false);
 
+  // A notification tapped while the app was open.
+  useEffect(() => onNotificationTap(openPath), []);
+
   // Open the join screen for an invite link once signed in and loaded.
   useEffect(() => {
     if (mode !== 'cloud' || !ready || !state.meId || !navReady || !navigationRef.isReady()) return;
@@ -190,7 +220,16 @@ function AppNavigator() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.space }}>
       <OfflineStrip />
-      <NavigationContainer ref={navigationRef} theme={navTheme} onReady={() => setNavReady(true)}>
+      <NavigationContainer
+        ref={navigationRef}
+        theme={navTheme}
+        onReady={() => setNavReady(true)}
+        linking={Platform.OS === 'web' && state.meId ? linking : undefined}
+        documentTitle={{ formatter: (options, route) => {
+          const title = options?.title ?? (route?.name === 'Home' ? undefined : route?.name);
+          return title && title !== 'Cosmic Balance' ? `${title} · Cosmic Balance` : 'Cosmic Balance';
+        } }}
+      >
         <Stack.Navigator
           screenOptions={{
             headerStyle: { backgroundColor: colors.space },
@@ -207,7 +246,7 @@ function AppNavigator() {
               <Stack.Screen
                 name="Home"
                 component={HomeScreen}
-                options={{ headerShown: false, title: 'Cosmic Khaata' }}
+                options={{ headerShown: false, title: 'Cosmic Balance' }}
               />
               <Stack.Screen name="Group" component={GroupScreen} />
               <Stack.Screen name="GroupSummary" component={GroupSummaryScreen} options={{ title: 'Group summary' }} />
@@ -220,6 +259,7 @@ function AppNavigator() {
               <Stack.Screen name="SettleAll" component={SettleAllScreen} />
               <Stack.Screen name="About" component={AboutScreen} options={{ title: 'About' }} />
               <Stack.Screen name="Join" component={JoinScreen} options={{ title: 'Join a group' }} />
+              <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
             </>
           )}
         </Stack.Navigator>

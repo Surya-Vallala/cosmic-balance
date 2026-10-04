@@ -5,7 +5,7 @@
 // a group converts everything to its main currency at the rates the group set.
 
 import { formatMoney, parseNumber, parseRupees } from './money';
-import type { CurrencyCode, Debt, Expense, Group, Id, Payment, SplitType, Totals, Transfer } from './types';
+import type { AppState, CurrencyCode, Debt, Expense, Group, Id, Payment, SplitType, Totals, Transfer } from './types';
 
 /**
  * Split `total` in proportion to `weights` so the parts are whole hundredths
@@ -516,4 +516,51 @@ export function groupSummary(group: Group, expenses: Expense[], payments: Paymen
     expenseCount: raw.length,
     members,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Removing a friend
+
+/** Whether someone takes part in a group's expenses or payments. */
+export function inGroupHistory(groupId: Id, personId: Id, expenses: Expense[], payments: Payment[]): boolean {
+  return (
+    expenses.some(
+      (e) =>
+        e.groupId === groupId &&
+        (personId in (e.payers ?? {}) || personId in (e.shares ?? {}) || (e.participants ?? []).includes(personId)),
+    ) || payments.some((p) => p.groupId === groupId && (p.from === personId || p.to === personId))
+  );
+}
+
+export type RemoveCheck = { ok: true; leaves: Group[] } | { ok: false; reason: string };
+
+/**
+ * Can I remove this friend? Only when we're settled up, they aren't in a group
+ * someone else created (shared mode), and they aren't in the expenses or
+ * payments of any group we share. If so, `leaves` lists the groups they'll be
+ * taken out of. (The database checks the same before removing.)
+ */
+export function canRemoveFriend(s: AppState, friendId: Id, myUserId: string | null, shared: boolean): RemoveCheck {
+  const me = s.meId;
+  const friend = s.people[friendId];
+  if (!me || !friend || friendId === me) return { ok: false, reason: 'You can’t remove yourself.' };
+  const name = friend.name;
+  const balance = nonZero(friendBalances(me, s.groups, s.expenses, s.payments, s.transfers)[friendId] ?? {});
+  if (balance.length > 0) {
+    return { ok: false, reason: `You and ${name} aren’t settled up yet. Settle up first, then you can remove ${name}.` };
+  }
+  const groups = s.groups.filter((g) => g.memberIds.includes(friendId));
+  for (const g of groups) {
+    if (shared && g.createdBy !== myUserId) {
+      const creator = Object.values(s.people).find((p) => p.userId && p.userId === g.createdBy);
+      return {
+        ok: false,
+        reason: `${name} is in ${g.name}, which ${creator?.name ?? 'someone else'} created. Ask them to take ${name} out of it first.`,
+      };
+    }
+    if (inGroupHistory(g.id, friendId, s.expenses, s.payments)) {
+      return { ok: false, reason: `${name} is in the expenses of ${g.name}. To remove ${name}, delete that group first.` };
+    }
+  }
+  return { ok: true, leaves: groups };
 }

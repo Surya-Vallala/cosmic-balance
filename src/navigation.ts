@@ -14,6 +14,7 @@ export type RootStackParamList = {
   SettleAll: { friendId: string; currency?: string };
   About: undefined;
   Join: { code?: string; invite?: string };
+  Notifications: undefined;
 };
 
 export type ScreenProps<T extends keyof RootStackParamList> = NativeStackScreenProps<RootStackParamList, T>;

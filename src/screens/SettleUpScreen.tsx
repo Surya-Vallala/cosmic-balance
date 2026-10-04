@@ -154,7 +154,7 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
       `pn=${encodeURIComponent(payee.name)}`,
       `am=${paiseToDecimalString(amount)}`,
       'cu=INR',
-      `tn=${encodeURIComponent(`${group.name} (Cosmic Khaata)`)}`,
+      `tn=${encodeURIComponent(`${group.name} (Cosmic Balance)`)}`,
     ].join('&');
     try {
       await Linking.openURL(`upi://pay?${params}`);
@@ -302,7 +302,7 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
       ) : null}
 
       <Text style={[ui.hint, { marginTop: space.xl }]}>
-        Recording a payment only updates balances in Cosmic Khaata. It doesn’t move any money.
+        Recording a payment only updates balances in Cosmic Balance. It doesn’t move any money.
       </Text>
 
       <CurrencyPicker

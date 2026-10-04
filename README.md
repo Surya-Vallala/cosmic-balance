@@ -1,10 +1,12 @@
-# Cosmic Khaata
+# Cosmic Balance
 
 A Splitwise-style app for splitting bills with friends. Runs on Android and iPhone, built with Expo (React Native) and TypeScript.
 
 Developed by **Tesseract Studio**, Hyderabad. Suggestions and questions: tools@tesseractstudio.co
 
-Live app: **https://surya-vallala.github.io/cosmic-khaata/**
+Live app: **https://surya-vallala.github.io/cosmic-balance/**
+
+(Earlier called Cosmic Khaata. Data saved on phones under the old name is kept.)
 
 There are two ways to use it:
 
@@ -24,31 +26,41 @@ There are two ways to use it:
 - **Simplify debts** (on by default, can be switched off per group): the group settles with the fewest payments.
 - **Settle up** in any of the group's currencies: the amount owed is shown in each, and paying the suggested amount clears the balance exactly. Record a payment. If you're paying someone who has a UPI ID, it opens GPay, PhonePe, Paytm or similar with the amount already filled in. If someone owes you, send a reminder through WhatsApp or any other app.
 - **Activity feed** of everything that's been added, edited, or paid.
+- **Notifications** (shared mode): the bell on the home screen lists what concerns you, and phones can get them even when the app is closed. See below.
+- **Remove a friend** you're settled up with (their page → Remove). History in groups is never rewritten, so someone in a group's expenses can be removed only after that group is deleted, and someone in a group another person created only after that person takes them out.
+- **The phone's Back button** goes to the previous screen (each screen has its own address, so reloading also stays put).
 - **Sample data** on the welcome screen so you can explore before adding real expenses.
 - **Export to spreadsheet** (Your profile): a CSV of every expense, payment and transfer, for backups.
 - **About page**: developed by Tesseract Studio, with the contact email.
 
 ## Sharing with friends
 
-**Invite friends on WhatsApp** (the easy way; you don't need their Gmail):
+**Invite one friend with their own link** (the easy way; you don't need their Gmail):
 
-1. Add them by name, in a group's "Who's in it" or under Friends → Add a friend. On Android, **Pick from contacts** / **Add from contacts** fills in names (and numbers) from your phone; the phone shares only the contacts you pick.
-2. The group (under **Not joined yet**) or their friend page has a **WhatsApp** button. It opens WhatsApp with a message and a link made just for them. If you saved their number, it opens your chat with them; otherwise you pick the chat. You tap Send.
-3. They open the link and sign in with Google (any Google account). They see who invited them and to which groups, tap **Accept invite**, and everything recorded for them becomes theirs. Each link works once.
-
-Numbers you save for WhatsApp stay on your phone only; they're never put in the shared database.
+1. Add them by name, in a group's "Who's in it" or under Friends → Add a friend.
+2. Their friend page (**Invite …**), or the group's **Not joined yet** list, shows their link with a **Share** button. Share opens the phone's share menu: pick WhatsApp, then their chat.
+3. They open the link and sign in with Google (any Google account). They see who invited them and to which groups, tap **Accept invite**, and everything recorded for them becomes theirs. No approval is needed: the link was made for them. Each link works once, and you're notified when they accept.
 
 **Or add friends by their Gmail address** (in a group's "Who's in it", or Friends → Add a friend):
 
-- If they already use Cosmic Khaata, they're added as themselves and see the group straight away.
-- If they don't yet, they're added as "not joined yet". The first time they sign in with that Gmail, they land in the group with everything recorded for them. No link needed.
+- If they already use Cosmic Balance, they're added as themselves and see the group straight away.
+- If they don't yet, they're added as "not joined yet". The first time they sign in with that Gmail, they land in the group with everything recorded for them, and you're notified.
 - Gmail addresses match however they're typed: `S.Urya+trip@GMail.com` is `surya@gmail.com`.
 
-**Or share the group link**: in the group, tap **Share the group link** and send it on WhatsApp (or copy it). A friend opens it, signs in with Google and taps **I'm Ravi** (the name you added them by). Everything recorded for "Ravi" becomes theirs. If they aren't in the list, they can join as themselves. A friend added by name only can also be linked later: open them under Friends → Edit and add their Gmail.
+**Or share the group's link** (good for a whole WhatsApp group): in the group, tap **Invite friends**, then **Share**. Anyone who opens it signs in and taps **Ask to join**: they see only the group's name, who runs it and how many are in it. The person who created the group gets a notification and an **Asking to join** list in the group, and taps **Let in** or **Decline**. If they were already added by name, **Let in** asks which name is theirs, and everything recorded for it becomes theirs. Nobody gets in without the creator's approval, so a link forwarded to the wrong chat is harmless; **Reset invite link** in the group's settings retires it anyway.
 
-Who sees what: you see a group only if you're in it. A transfer outside groups is seen only by the two people in it (and whoever recorded it). Friends added by Gmail see each other in their Friends lists. Only the person who created a group can delete it; anyone else can leave a group they have no expenses in. Anyone with an invite link can join that group, so share it only with the friends in it; **Reset invite link** in the group's settings makes the old link stop working.
+Who sees what: you see a group only if you're in it (or once you're let in). A transfer outside groups is seen only by the two people in it (and whoever recorded it). Friends added by Gmail see each other in their Friends lists. Only the person who created a group can delete it or let people in through its link; anyone else can leave a group they have no expenses in.
 
 **Without a connection**, changes are kept on the phone and sent as soon as it's back online, even if the app was closed in between. A strip at the top says how many are waiting.
+
+## Notifications
+
+You're notified when a friend adds, edits or deletes an expense you're in, records a payment or settle-up with you, adds you to a group, asks to join a group you created, lets you in, or accepts your invite. Notifications say what happened, never amounts ("Ravi added an expense in Goa trip").
+
+- **In the app**: the bell on the home screen shows how many are new; tap it for the list. Tapping one opens the group or friend.
+- **On the phone, with the app closed**: Your profile → Notifications → **Turn on notifications** (the phone asks once). Works on Android (Chrome, best with the app installed) and on iPhone with iOS 16.4 or later, **only once the app is added to the Home Screen** and opened from there. Signing out turns them off on that phone.
+
+Behind the scenes, the database records each notification and asks the small `send-push` function (in Supabase) to deliver it. Delivery uses the standard Web Push protocol and costs nothing.
 
 ## Look and feel
 
@@ -69,14 +81,14 @@ The web version is an installable app. Open its link on the phone, then:
 It gets its own icon and opens full screen. To publish the web version under a sub-path (GitHub Pages):
 
 ```bash
-WEB_BASE_URL=/cosmic-khaata npx expo export --platform web
+WEB_BASE_URL=/cosmic-balance npx expo export --platform web
 ```
 
 and upload the `dist` folder.
 
 ## Setting up the shared backend (one time)
 
-The backend is a free Supabase project (`cosmic-khaata`). The app only contains the project URL and the **publishable** key, which are safe to ship; the database rules decide what each person can see. Never put the secret key (`sb_secret_…` or `service_role`) in the app.
+The backend is a free Supabase project (named `cosmic-khaata` in the dashboard; the name there doesn't matter). The app only contains the project URL and the **publishable** key, which are safe to ship; the database rules decide what each person can see. Never put the secret key (`sb_secret_…` or `service_role`) in the app.
 
 1. **Database**: in Supabase, open **SQL Editor → New query**, paste all of [`supabase/schema.sql`](supabase/schema.sql) and press **Run**. It's safe to run again, and running the latest version is also how an existing database is upgraded (data is kept). Run it *before* publishing a new version of the app.
 2. **Google sign-in**: in [Google Cloud Console](https://console.cloud.google.com/) → APIs & Services → Credentials, create an **OAuth client ID** of type *Web application* with
@@ -84,7 +96,9 @@ The backend is a free Supabase project (`cosmic-khaata`). The app only contains 
    - Authorised redirect URI: `https://jwmnmrmocilfrqohhezf.supabase.co/auth/v1/callback`
 
    Then in Supabase → **Authentication → Sign In / Providers → Google**, turn it on and paste the client ID and client secret. The secret stays in Supabase.
-3. **Where to send people back**: Supabase → **Authentication → URL Configuration**: set *Site URL* to `https://surya-vallala.github.io/cosmic-khaata/` and add the same address under *Redirect URLs*.
+3. **Where to send people back**: Supabase → **Authentication → URL Configuration**: set *Site URL* to `https://surya-vallala.github.io/cosmic-balance/` and add the same address under *Redirect URLs*.
+4. **Notifications to phones**: Supabase → **Edge Functions → Deploy a new function → Via Editor**. Name it `send-push`, replace the sample code with all of [`supabase/functions/send-push/index.ts`](supabase/functions/send-push/index.ts), and deploy. Then open the function's **Details** and turn **off** JWT verification (the switch is called "Verify JWT"; the database calls it without a user's sign-in; the function only sends notifications that are already waiting, so this is safe). It needs no secrets: it uses the project's own keys and makes its push key pair the first time it runs. The schema turns on the `pg_net` extension it uses to call the function; if it couldn't, turn on **pg_net** under Database → Extensions and run the schema again.
+5. **The name on Google's sign-in screen**: Google Cloud Console → Google Auth Platform → **Branding** → App name: `Cosmic Balance`.
 
 To point a build at a different Supabase project, set `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_KEY` and `EXPO_PUBLIC_APP_URL` (see `src/cloud/config.ts`).
 
@@ -95,7 +109,7 @@ Sign-in with Google currently works in the web app (installed to the home screen
 You need [Node.js](https://nodejs.org) (LTS version) on your computer and the **Expo Go** app on your phone (Play Store or App Store).
 
 ```bash
-cd cosmic-khaata
+cd cosmic-balance
 npm install
 npx expo start
 ```
@@ -107,15 +121,16 @@ To try it in a browser instead: `npx expo start --web`.
 ## Project layout
 
 ```
-App.tsx                  sign-in gate, navigation, font loading
+App.tsx                  sign-in gate, navigation (with browser history), font loading
 src/
   auth.tsx               Google sign-in, "this phone only" mode, invite links
   cloud/                 Supabase client, loading/saving rows, live updates
-  share.ts               share sheet / copy for invite links
-  invites.ts, whatsapp.ts  personal WhatsApp invites; wa.me links and phone numbers
-  contacts.ts, phones.ts picking friends from contacts (Android); numbers kept on this phone
+  linking.ts             screen addresses, so the phone's Back button works
+  push.ts                phone notifications (Web Push) on this device
+  notify-ui.tsx          the bell and the notifications on/off card
+  invites.tsx, messages.ts, share.ts  invite links, their messages, the share menu
   emails.ts              email address check
-  logic.ts               splitting, balances, debt simplification (pure functions)
+  logic.ts               splitting, balances, debt simplification, removing friends (pure functions)
   logic.test.ts          tests for the money maths   (npx vitest run)
   money.ts               currencies, formatting (Indian grouping for ₹) and parsing
   store.tsx              app state; saves to the phone or syncs online
@@ -124,13 +139,14 @@ src/
   export.ts              spreadsheet (CSV) export
   screens/               Welcome, Join, Onboarding, Home, Group, GroupSummary,
                          GroupForm, ExpenseForm, SettleUp, Friend, FriendForm,
-                         Transfer, SettleAll, About
+                         Transfer, SettleAll, Notifications, About
 supabase/
-  schema.sql             tables, access rules, invite/join/claim functions (re-run to upgrade)
+  schema.sql             tables, access rules, invites, join requests, notifications (re-run to upgrade)
+  functions/send-push/   delivers notifications to phones (Web Push, no libraries)
   test_rls.py            checks the access rules against a local Postgres
-  test_upgrade.py        upgrading a database made with the first version
-  test_stub.sql          a small stand-in for Supabase's auth, for those tests
-public/                  web app manifest, icons and page template
+  test_upgrade.py        upgrading databases made with versions 1 and 3
+  test_stub.sql          a small stand-in for Supabase's auth and pg_net, for those tests
+public/                  web app manifest, icons, service worker (sw.js) and page template
 ```
 
 Free Supabase projects pause after about a week with no activity. The workflow in `.github/workflows/keep-supabase-awake.yml` makes one small read every day so that never happens (free for public repositories; GitHub stops scheduled workflows after 60 days without any commits, and emails you first).
@@ -140,10 +156,13 @@ Free Supabase projects pause after about a week with no activity. The workflow i
 ```bash
 npx tsc --noEmit                 # type-check
 npx expo lint                    # lint
-npx vitest run                   # 55 tests: splits, payers, currencies, rounding, balances, summary,
-                                 # transfers, database rows, WhatsApp links and phone numbers
-python3 supabase/test_rls.py     # 81 checks of who can see and change what (needs Postgres 16 on :5433)
-python3 supabase/test_upgrade.py # upgrading a database made with the first version
+npx vitest run                   # 71 tests: splits, payers, currencies, rounding, balances, summary,
+                                 # transfers, removing friends, database rows, screen addresses, messages
+python3 supabase/test_rls.py     # 147 checks of who can see and change what, join requests, notifications
+                                 # and friend removal (needs Postgres 16 on :5433)
+python3 supabase/test_upgrade.py # upgrading databases made with versions 1 and 3
+# supabase/functions/send-push/test.mts: Web Push encryption and signing checked against the
+# reference libraries, and delivery through a local database (see the top of the file)
 ```
 
 The database tests create throwaway databases on a local Postgres with a small stand-in for Supabase's auth (`supabase/test_stub.sql`).

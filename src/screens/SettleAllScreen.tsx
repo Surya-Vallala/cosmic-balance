@@ -99,7 +99,7 @@ export default function SettleAllScreen({ navigation, route }: ScreenProps<'Sett
       `pn=${encodeURIComponent(friend.name)}`,
       `am=${paiseToDecimalString(amount)}`,
       'cu=INR',
-      `tn=${encodeURIComponent('Settle up (Cosmic Khaata)')}`,
+      `tn=${encodeURIComponent('Settle up (Cosmic Balance)')}`,
     ].join('&');
     Linking.openURL(`upi://pay?${params}`).catch(() => {});
   };

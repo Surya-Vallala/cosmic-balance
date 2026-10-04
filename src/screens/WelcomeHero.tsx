@@ -13,8 +13,8 @@ export function WelcomeHero() {
       <Starfield count={40} seed={11} />
       <Libra width={170} opacity={0.8} style={{ position: 'absolute', right: space.lg, top: insets.top + space.xxl * 2.4 }} />
       <OrbitMark size={40} />
-      <Text style={s.wordmark}>{'cosmic\nkhaata'}</Text>
-      <Text style={s.lede}>Share costs with friends anywhere on the planet, and keep the khaata balanced.</Text>
+      <Text style={s.wordmark}>{'cosmic\nbalance'}</Text>
+      <Text style={s.lede}>Share costs with friends anywhere on the planet, and keep everything in balance.</Text>
       <View style={s.ledger}>
         <LedgerLine left="Dinner in Bangkok" right="฿1,860" />
         <LedgerLine left="Ravi owes you" right="₹1,250" tone="owed" />

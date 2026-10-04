@@ -2,5 +2,7 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true
-  }
+  },
+  // The send-push function runs on Deno in Supabase and is checked there (deno check).
+  "exclude": ["node_modules", "dist", "supabase/functions"]
 }

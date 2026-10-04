@@ -18,6 +18,11 @@ export interface Person {
    * Gmail address that links them automatically when they sign in.
    */
   email?: string | null;
+  /**
+   * Shared mode only: you see them only because they asked to join a group
+   * you run. Not a friend (yet), so left out of friends lists and pickers.
+   */
+  requesting?: boolean;
 }
 
 export interface Group {
@@ -108,6 +113,25 @@ export interface Activity {
   text: string;
 }
 
+/** Shared mode: something that happened that concerns you (no amounts). */
+export interface Notice {
+  id: Id;
+  kind: string;
+  body: string;
+  groupId?: Id | null;
+  personId?: Id | null;
+  createdAt: string;
+  read: boolean;
+}
+
+/** Shared mode: someone who opened a group's link and asked to join. */
+export interface JoinRequest {
+  id: Id;
+  groupId: Id;
+  personId: Id;
+  createdAt: string;
+}
+
 export interface AppState {
   version: 1;
   meId: Id | null;
@@ -117,6 +141,10 @@ export interface AppState {
   payments: Payment[];
   transfers: Transfer[];
   activity: Activity[];
+  /** Shared mode only. */
+  notices?: Notice[];
+  /** Shared mode only: requests you can see (yours, and to groups you let people into). */
+  joinRequests?: JoinRequest[];
 }
 
 export interface Debt {

@@ -20,7 +20,7 @@ export default function WelcomeScreen() {
         {invited ? (
           <View style={s.invite}>
             <Text style={s.inviteTitle}>
-              {pendingInvite ? 'A friend invited you to Cosmic Khaata' : 'You’ve been invited to a group'}
+              {pendingInvite ? 'A friend invited you to Cosmic Balance' : 'You’ve been invited to a group'}
             </Text>
             <Text style={s.inviteBody}>
               {pendingInvite

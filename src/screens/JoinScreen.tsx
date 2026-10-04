@@ -5,15 +5,16 @@ import {
   claimPersonInvite,
   CloudError,
   groupPreview,
-  joinGroup,
   personInvitePreview,
+  requestJoin,
   type GroupPreview,
   type PersonInvitePreview,
 } from '../cloud/api';
 import type { ScreenProps } from '../navigation';
+import { PushCard } from '../notify-ui';
 import { useStore } from '../store';
 import { colors, fonts, space } from '../theme';
-import { Avatar, Button, Empty, GroupBadge, List, Row, Screen, SectionTitle, styles as ui } from '../ui';
+import { Avatar, Button, Empty, GroupBadge, Screen, styles as ui } from '../ui';
 
 /** Opened from an invite link: a group's link, or a personal one sent to one friend. */
 export default function JoinScreen({ navigation, route }: ScreenProps<'Join'>) {
@@ -119,7 +120,7 @@ function PersonInvite({ code, navigation }: { code: string; navigation: Nav }) {
   const groups = preview.groups;
   const where =
     groups.length === 0
-      ? 'You’ll be friends on Cosmic Khaata, so you can record money between you.'
+      ? 'You’ll be friends on Cosmic Balance, so you can record money between you.'
       : `You’ll join ${groups.length === 1 ? groups[0] : `${groups.slice(0, -1).join(', ')} and ${groups[groups.length - 1]}`}, with everything already recorded for you.`;
 
   return (
@@ -145,13 +146,13 @@ function PersonInvite({ code, navigation }: { code: string; navigation: Nav }) {
   );
 }
 
-/** A group's invite link: join the group, optionally as the person already added for you. */
+/** A group's link: ask to join; whoever created the group lets you in. */
 function GroupInvite({ code, navigation }: { code: string; navigation: Nav }) {
-  const { refresh, state } = useStore();
+  const { refresh } = useStore();
   const { clearPendingJoin } = useAuth();
   const [preview, setPreview] = useState<GroupPreview | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [canRetry, setCanRetry] = useState(false);
 
   useLayoutEffect(() => {
@@ -185,17 +186,21 @@ function GroupInvite({ code, navigation }: { code: string; navigation: Nav }) {
     fetchPreview();
   };
 
-  const join = async (claim: string | null) => {
-    setBusy(claim ?? 'new');
+  const ask = async () => {
+    setBusy(true);
     setError(null);
     try {
-      const groupId = await joinGroup(code, claim);
-      await refresh();
-      navigation.replace('Group', { groupId });
+      const res = await requestJoin(code);
+      if (res.status === 'member') {
+        await refresh();
+        navigation.replace('Group', { groupId: res.group_id });
+        return;
+      }
+      setPreview((p) => (p ? { ...p, requested: true } : p));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-      setBusy(null);
     }
+    setBusy(false);
   };
 
   if (preview === undefined && !error) {
@@ -230,55 +235,53 @@ function GroupInvite({ code, navigation }: { code: string; navigation: Nav }) {
           <GroupBadge name={preview.name} size={64} />
           <Text style={s.title}>You’re already in {preview.name}</Text>
         </View>
-        <Button title="Open the group" onPress={() => navigation.replace('Group', { groupId: preview.id })} />
+        <Button
+          title="Open the group"
+          onPress={async () => {
+            await refresh();
+            navigation.replace('Group', { groupId: preview.id });
+          }}
+        />
       </Screen>
     );
   }
 
-  const me = state.meId ? state.people[state.meId] : undefined;
-  const unclaimed = preview.members.filter((m) => !m.claimed);
-  const joined = preview.members.filter((m) => m.claimed);
+  const owner = preview.owner ?? 'the group';
+  const count = preview.member_count ?? 0;
+
+  if (preview.requested) {
+    return (
+      <Screen>
+        <View style={s.head}>
+          <GroupBadge name={preview.name} size={64} />
+          <Text style={s.title}>Request sent</Text>
+          <Text style={s.meta}>
+            {owner} will see that you asked to join {preview.name}. Once they let you in, the group shows up in your
+            groups.
+          </Text>
+        </View>
+        <PushCard hideWhenOn />
+        <View style={{ marginTop: space.lg }}>
+          <Button title="Go to my groups" variant="secondary" onPress={() => navigation.popToTop()} />
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
       <View style={s.head}>
         <GroupBadge name={preview.name} size={64} />
         <Text style={s.title}>Join {preview.name}</Text>
-        {joined.length ? (
-          <Text style={s.meta}>With {joined.map((m) => m.name).join(', ')}</Text>
-        ) : null}
+        <Text style={s.meta}>
+          {count ? `${count} ${count === 1 ? 'person' : 'people'} · ` : ''}run by {owner}
+        </Text>
       </View>
-
-      {unclaimed.length > 0 ? (
-        <>
-          <SectionTitle>Which one is you?</SectionTitle>
-          <Text style={[ui.hint, { marginTop: 0, marginBottom: space.md }]}>
-            If someone already added you to this group by name, pick it. Everything they recorded for you will be
-            linked to your account.
-          </Text>
-          <List>
-            {unclaimed.map((m, i) => (
-              <Row
-                key={m.id}
-                left={<Avatar name={m.name} size={36} />}
-                title={`I'm ${m.name}`}
-                subtitle={busy === m.id ? 'Joining…' : undefined}
-                onPress={busy ? undefined : () => join(m.id)}
-                last={i === unclaimed.length - 1}
-              />
-            ))}
-          </List>
-        </>
-      ) : null}
-
-      <View style={{ marginTop: space.xl }}>
-        <Button
-          title={busy === 'new' ? 'Joining…' : unclaimed.length ? "I'm not on this list: join as me" : `Join as ${me?.name ?? 'me'}`}
-          variant={unclaimed.length ? 'secondary' : 'primary'}
-          disabled={!!busy}
-          onPress={() => join(null)}
-        />
-      </View>
+      <Button title={busy ? 'Asking…' : 'Ask to join'} disabled={busy} onPress={ask} />
+      <Text style={[ui.hint, { textAlign: 'center', marginTop: space.md }]}>
+        {owner} lets people in. If they already added you by name, they’ll link you to it, with everything recorded for
+        you.
+      </Text>
       {error ? <Text style={[ui.error, { textAlign: 'center' }]}>{error}</Text> : null}
     </Screen>
   );

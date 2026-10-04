@@ -1,5 +1,5 @@
 // Lets the web build live under a sub-path, e.g. GitHub Pages:
-//   WEB_BASE_URL=/cosmic-khaata npx expo export --platform web
+//   WEB_BASE_URL=/cosmic-balance npx expo export --platform web
 module.exports = ({ config }) => ({
   ...config,
   experiments: {

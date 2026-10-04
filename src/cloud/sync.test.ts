@@ -156,3 +156,54 @@ describe('actionToOps', () => {
     expect(actionToOps({ type: 'reset' }, before)).toEqual([]);
   });
 });
+
+describe('notifications and join requests', () => {
+  const ASKER = '44444444-4444-4444-8444-444444444444';
+  const FRIEND = '55555555-5555-4555-8555-555555555555';
+  const withExtras: Rows = {
+    ...rows,
+    people: [
+      ...rows.people,
+      { id: ASKER, user_id: 'u-asker', name: 'Asha', upi_id: null, email: 'asha@gmail.com', created_by: 'u-asker', created_at: '2026-10-02T09:00:00Z' },
+      { id: FRIEND, user_id: 'u-friend', name: 'Farah', upi_id: null, email: 'farah@gmail.com', created_by: 'u-friend', created_at: '2026-10-02T09:00:00Z' },
+    ],
+    join_requests: [
+      { id: 'r1', group_id: G, person_id: ASKER, created_at: '2026-10-02T10:00:00Z' },
+      { id: 'r2', group_id: G, person_id: FRIEND, created_at: '2026-10-02T10:00:00Z' },
+    ],
+    contacts: [{ person_id: FRIEND }],
+    notifications: [
+      { id: 'n1', kind: 'request', body: 'Asha asked to join Thailand trip', group_id: G, person_id: null, created_at: '2026-10-02T10:00:00Z', read_at: null },
+      { id: 'n2', kind: 'expense', body: 'Ravi added an expense in Thailand trip', group_id: G, person_id: null, created_at: '2026-10-03T10:00:00Z', read_at: '2026-10-03T11:00:00Z' },
+    ],
+  };
+  const s = rowsToState(withExtras, ME);
+
+  it('keeps notifications newest first, with read state', () => {
+    expect(s.notices?.map((n) => [n.id, n.read])).toEqual([
+      ['n2', true],
+      ['n1', false],
+    ]);
+  });
+  it('maps join requests', () => {
+    expect(s.joinRequests).toEqual([
+      { id: 'r1', groupId: G, personId: ASKER, createdAt: '2026-10-02T10:00:00Z' },
+      { id: 'r2', groupId: G, personId: FRIEND, createdAt: '2026-10-02T10:00:00Z' },
+    ]);
+  });
+  it('marks people you see only because they asked to join, so they stay out of friends lists', () => {
+    expect(s.people[ASKER].requesting).toBe(true);
+    expect(s.people[FRIEND].requesting).toBeUndefined(); // already a friend
+    expect(s.people[RAVI].requesting).toBeUndefined();
+  });
+  it('works with a database older than notifications', () => {
+    const old = rowsToState(rows, ME);
+    expect(old.notices).toEqual([]);
+    expect(old.joinRequests).toEqual([]);
+  });
+  it('removing a friend calls remove_friend', () => {
+    expect(actionToOps({ type: 'removeFriend', id: RAVI } as never, s)).toEqual([
+      { kind: 'rpc', fn: 'remove_friend', args: { p_person: RAVI } },
+    ]);
+  });
+});

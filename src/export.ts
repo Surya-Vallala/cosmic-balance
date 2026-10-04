@@ -60,7 +60,7 @@ export function buildCsv(state: AppState): string {
 /** Save (web) or share (phone app) the CSV. Returns a short status message. */
 export async function exportCsv(state: AppState): Promise<string> {
   const csv = buildCsv(state);
-  const filename = `cosmic-khaata-${new Date().toISOString().slice(0, 10)}.csv`;
+  const filename = `cosmic-balance-${new Date().toISOString().slice(0, 10)}.csv`;
   if (Platform.OS === 'web') {
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);

@@ -1,5 +1,5 @@
 // Minimal cosmic illustrations, drawn with thin lines and few marks:
-// - Libra, the constellation of the scales (balance is what a khaata keeps)
+// - Libra, the constellation of the scales (balance is what the app keeps)
 // - a black hole, for empty screens
 // - a pulsar, for loading and for sending reminders (a signal going out)
 // - a supernova, for the moment a balance is settled

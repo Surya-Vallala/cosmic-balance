@@ -1,21 +1,22 @@
-import React, { useLayoutEffect } from 'react';
+import React, { useLayoutEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Supernova } from '../cosmos';
 import { relativeDay } from '../dates';
-import { useWhatsAppInvites } from '../invites';
-import { friendBalanceByGroup, friendBalances, nonZero } from '../logic';
+import { shareNote, ShareLink, useInviteLinks } from '../invites';
+import { canRemoveFriend, friendBalanceByGroup, friendBalances, nonZero } from '../logic';
 import { formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
 import { useStore } from '../store';
 import { colors, fonts, space } from '../theme';
-import { Avatar, BalanceTag, Button, Empty, GroupBadge, List, Row, Screen, SectionTitle } from '../ui';
+import { Avatar, BalanceTag, Button, ConfirmButton, Empty, GroupBadge, List, Row, Screen, SectionTitle } from '../ui';
 
 export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'>) {
-  const { state, mode } = useStore();
+  const { state, mode, dispatch, userId } = useStore();
   const meId = state.meId!;
   const friend = state.people[route.params.friendId];
   const notJoined = mode === 'cloud' && !!friend && !friend.userId;
-  const invites = useWhatsAppInvites(notJoined && friend ? [friend] : []);
+  const invites = useInviteLinks(notJoined && friend ? [friend] : []);
+  const [inviteNote, setInviteNote] = useState<string | null>(null);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -29,7 +30,13 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
     });
   }, [navigation, friend]);
 
-  if (!friend) return <Screen><Empty title="Friend not found" body="Go back to see your friends." /></Screen>;
+  if (!friend || friend.id === meId) {
+    return (
+      <Screen>
+        <Empty title="Not in your friends" body="They may have been removed. Go back to see your friends." />
+      </Screen>
+    );
+  }
 
   const overall = nonZero(friendBalances(meId, state.groups, state.expenses, state.payments, state.transfers)[friend.id] ?? {});
   const byGroup = friendBalanceByGroup(meId, friend.id, state.groups, state.expenses, state.payments);
@@ -62,24 +69,31 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
         {mode === 'cloud' && !friend.userId ? (
           <Text style={s.upi}>
             {friend.email
-              ? `Not on Cosmic Khaata yet. Linked automatically when they sign in with ${friend.email}.`
-              : 'Not on Cosmic Khaata yet. Send them their invite on WhatsApp.'}
+              ? `Not on Cosmic Balance yet. Linked automatically when they sign in with ${friend.email}.`
+              : 'Not on Cosmic Balance yet. Send them their invite link.'}
           </Text>
         ) : null}
       </View>
 
-      {notJoined ? (
+      {notJoined && invites.unavailable(friend.id) ? (
+        <Text style={[s.inviteNote, { textAlign: 'center', marginTop: space.lg }]}>
+          {friend.name} is also in groups you’re not in, so only whoever added {friend.name} can send their invite.
+        </Text>
+      ) : notJoined ? (
         <View style={{ marginTop: space.lg }}>
-          <Button
-            title={invites.ready(friend.id) || invites.error ? 'Invite on WhatsApp' : 'Preparing invite…'}
-            disabled={!invites.ready(friend.id)}
-            onPress={() => invites.invite(friend)}
+          <SectionTitle>{`Invite ${friend.name}`}</SectionTitle>
+          <ShareLink
+            link={invites.link(friend.id)}
+            accessibilityLabel={`Share ${friend.name}’s invite link`}
+            onShare={() => {
+              const l = invites.link(friend.id);
+              invites.share(friend)?.then((r) => setInviteNote(l ? shareNote(r, l) : null));
+            }}
           />
           <Text style={s.inviteNote}>
             {invites.error ??
-              (invites.hasPhone(friend.id)
-                ? `Opens your WhatsApp chat with ${friend.name}. Their own link signs them in as ${friend.name}.`
-                : `Opens WhatsApp so you can pick ${friend.name}. Their own link signs them in as ${friend.name}.`)}
+              inviteNote ??
+              `Share opens your phone’s share menu: pick WhatsApp, then ${friend.name}’s chat. This link is only for ${friend.name}: opening it and signing in with Google makes them ${friend.name} here.`}
           </Text>
         </View>
       ) : null}
@@ -174,7 +188,49 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
           ))}
         </List>
       )}
+
+      <RemoveFriend
+        check={canRemoveFriend(state, friend.id, userId, mode === 'cloud')}
+        name={friend.name}
+        onRemove={() => {
+          dispatch({ type: 'removeFriend', id: friend.id });
+          navigation.popToTop();
+        }}
+      />
     </Screen>
+  );
+}
+
+function RemoveFriend({
+  check,
+  name,
+  onRemove,
+}: {
+  check: ReturnType<typeof canRemoveFriend>;
+  name: string;
+  onRemove: () => void;
+}) {
+  return (
+    <View style={{ marginTop: space.xxl }}>
+      {check.ok ? (
+        <>
+          <ConfirmButton title={`Remove ${name}`} confirmTitle={`Tap again to remove ${name}`} onConfirm={onRemove} />
+          <Text style={s.removeNote}>
+            {[
+              `You’re settled up, so you can remove ${name} from your friends.`,
+              check.leaves.length
+                ? `They’ll also leave ${check.leaves.map((g) => g.name).join(', ')}.`
+                : '',
+              'Their account isn’t affected.',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+          </Text>
+        </>
+      ) : (
+        <Text style={s.removeNote}>{check.reason}</Text>
+      )}
+    </View>
   );
 }
 
@@ -182,7 +238,8 @@ const s = StyleSheet.create({
   headerLink: { color: colors.star, fontSize: 16, fontWeight: '600', paddingHorizontal: 8 },
   headline: { fontFamily: fonts.light, fontSize: 24, textAlign: 'center', marginTop: space.md, lineHeight: 30 },
   caption: { fontSize: 13, color: colors.muted, marginTop: 4 },
-  inviteNote: { fontSize: 12, color: colors.muted, textAlign: 'center', marginTop: space.sm, lineHeight: 16 },
+  inviteNote: { fontSize: 12, color: colors.muted, marginTop: space.sm, marginHorizontal: space.xs, lineHeight: 16 },
+  removeNote: { fontSize: 12, color: colors.muted, textAlign: 'center', marginTop: space.sm, lineHeight: 17 },
   upi: { fontSize: 13, color: colors.muted, marginTop: 4, textAlign: 'center', lineHeight: 18 },
   actions: { flexDirection: 'row', gap: space.sm, marginTop: space.xl },
   none: { fontSize: 14, color: colors.muted, lineHeight: 20, marginHorizontal: space.xs },

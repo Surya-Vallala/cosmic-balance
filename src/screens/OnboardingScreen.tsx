@@ -30,7 +30,7 @@ export default function OnboardingScreen() {
         <WelcomeHero />
         <View style={[sheetStyle, { paddingBottom: insets.bottom + space.xl }]}>
           <Text style={[ui.hint, { marginTop: 0, marginBottom: space.lg }]}>
-            Using Cosmic Khaata on this phone only. Nothing is shared or saved online.
+            Using Cosmic Balance on this phone only. Nothing is shared or saved online.
           </Text>
           <Field
             label="Your name"

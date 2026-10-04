@@ -1,4 +1,4 @@
-// Cosmic Khaata theme: deep space, starlight, and one warm star for actions.
+// Cosmic Balance theme: deep space, starlight, and one warm star for actions.
 // Minimal by intent: flat surfaces, hairline edges, a sparse starfield in
 // two places only (welcome and home), and an orbit motif for the logo and
 // group badges.

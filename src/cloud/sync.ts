@@ -2,7 +2,7 @@
 // Pure functions only, so they can be tested without a network.
 
 import { formatMoney } from '../money';
-import type { Activity, AppState, Expense, Group, Id, Payment, Person, Transfer } from '../types';
+import type { Activity, AppState, Expense, Group, Id, JoinRequest, Notice, Payment, Person, Transfer } from '../types';
 
 export interface PersonRow {
   id: string;
@@ -50,12 +50,33 @@ export interface TransferRow {
   created_at: string;
 }
 
+export interface NoticeRow {
+  id: string;
+  kind: string;
+  body: string;
+  group_id: string | null;
+  person_id: string | null;
+  created_at: string;
+  read_at: string | null;
+}
+export interface JoinRequestRow {
+  id: string;
+  group_id: string;
+  person_id: string;
+  created_at: string;
+}
+
 export interface Rows {
   people: PersonRow[];
   groups: GroupRow[];
   expenses: ExpenseRow[];
   payments: PaymentRow[];
   transfers: TransferRow[];
+  /** Missing when the database is older than version 4. */
+  notifications?: NoticeRow[];
+  join_requests?: JoinRequestRow[];
+  /** Your friends list (person ids). */
+  contacts?: { person_id: string }[];
 }
 
 export function personFromRow(p: PersonRow): Person {
@@ -106,7 +127,46 @@ export function rowsToState(rows: Rows, meId: Id): AppState {
     createdAt: r.data.createdAt ?? r.created_at,
   }));
 
-  const state: AppState = { version: 1, meId, people, groups, expenses, payments, transfers, activity: [] };
+  const notices: Notice[] = [...(rows.notifications ?? [])]
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .map((n) => ({
+      id: n.id,
+      kind: n.kind,
+      body: n.body,
+      groupId: n.group_id,
+      personId: n.person_id,
+      createdAt: n.created_at,
+      read: !!n.read_at,
+    }));
+  // People you see only because they asked to join one of your groups.
+  const myUser = people[meId]?.userId;
+  const known = new Set<string>([meId, ...(rows.contacts ?? []).map((c) => c.person_id)]);
+  for (const g of rows.groups) for (const m of g.member_ids) known.add(m);
+  for (const t of rows.transfers) known.add(t.from_person).add(t.to_person);
+  for (const p of rows.people) if (myUser && p.created_by === myUser && !p.user_id) known.add(p.id);
+  for (const r of rows.join_requests ?? []) {
+    if (!known.has(r.person_id) && people[r.person_id]) people[r.person_id] = { ...people[r.person_id], requesting: true };
+  }
+
+  const joinRequests: JoinRequest[] = (rows.join_requests ?? []).map((r) => ({
+    id: r.id,
+    groupId: r.group_id,
+    personId: r.person_id,
+    createdAt: r.created_at,
+  }));
+
+  const state: AppState = {
+    version: 1,
+    meId,
+    people,
+    groups,
+    expenses,
+    payments,
+    transfers,
+    activity: [],
+    notices,
+    joinRequests,
+  };
   state.activity = deriveActivity(rows, state);
   return state;
 }
@@ -182,6 +242,7 @@ export type WriteAction =
   | { type: 'saveTransfer'; transfer: Transfer }
   | { type: 'deleteTransfer'; id: Id }
   | { type: 'settleOverall'; settlement: Transfer; payments: Payment[] }
+  | { type: 'removeFriend'; id: Id }
   | { type: string };
 
 const paymentRow = (p: Payment) => ({ id: p.id, group_id: p.groupId, settlement_id: p.settlementId ?? null, data: p });
@@ -258,6 +319,8 @@ export function actionToOps(action: WriteAction, before: AppState): Op[] {
       if (a.payments.length) ops.push({ table: 'payments', kind: 'insert', values: a.payments.map(paymentRow) });
       return ops;
     }
+    case 'removeFriend':
+      return [{ kind: 'rpc', fn: 'remove_friend', args: { p_person: a.id } }];
     default:
       return [];
   }

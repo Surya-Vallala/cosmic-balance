@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Cosmic Khaata",
-    "slug": "cosmic-khaata",
-    "version": "1.0.0",
+    "name": "Cosmic Balance",
+    "slug": "cosmic-balance",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -24,7 +24,7 @@
     "plugins": [
       "expo-font"
     ],
-    "scheme": "cosmickhaata",
+    "scheme": "cosmicbalance",
     "backgroundColor": "#0B0E24",
     "splash": {
       "backgroundColor": "#0B0E24",

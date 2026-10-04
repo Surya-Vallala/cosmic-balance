@@ -164,7 +164,7 @@ export function Wordmark({ size = 18 }: { size?: number }) {
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: size * 0.5 }}>
       <OrbitMark size={size * 1.05} />
       <Text style={{ fontFamily: fonts.medium, fontSize: size, color: colors.text, letterSpacing: 0.2 }}>
-        cosmic khaata
+        cosmic balance
       </Text>
     </View>
   );

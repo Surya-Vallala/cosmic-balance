@@ -6,6 +6,7 @@ import { relativeDay } from '../dates';
 import { friendBalances, groupCurrencies, groupNet, nonZero, sumTotals } from '../logic';
 import { currency, formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
+import { Bell } from '../notify-ui';
 import { useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { Totals } from '../types';
@@ -20,7 +21,7 @@ function joinAmounts(entries: [string, number][]): string {
 }
 
 export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
-  const { state, mode } = useStore();
+  const { state, mode, userId } = useStore();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('groups');
   const meId = state.meId!;
@@ -60,8 +61,12 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
   const out = single ? iOwe[single] ?? 0 : 0;
 
   const friendTotal = (id: string) => Object.values(fb[id] ?? {}).reduce((a, v) => a + Math.abs(v), 0);
+  const unread = state.notices?.filter((n) => !n.read).length ?? 0;
+  // Requests waiting for you, per group you run.
+  const asking = (groupId: string) =>
+    (state.joinRequests ?? []).filter((r) => r.groupId === groupId && r.personId !== meId).length;
   const friends = Object.values(state.people)
-    .filter((p) => p.id !== meId)
+    .filter((p) => p.id !== meId && !p.requesting)
     .sort((a, b) => friendTotal(b.id) - friendTotal(a.id) || a.name.localeCompare(b.name));
 
   const addExpense = () => {
@@ -78,14 +83,17 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
         <Libra width={96} opacity={0.8} style={{ position: 'absolute', right: 76, top: insets.top + 4 }} />
         <View style={s.topRow}>
           <Wordmark size={17} />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Your profile"
-            onPress={() => navigation.navigate('FriendForm', { personId: meId })}
-            hitSlop={8}
-          >
-            <Avatar name={me?.name ?? '?'} size={34} />
-          </Pressable>
+          <View style={s.topActions}>
+            {mode === 'cloud' ? <Bell count={unread} onPress={() => navigation.navigate('Notifications')} /> : null}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Your profile"
+              onPress={() => navigation.navigate('FriendForm', { personId: meId })}
+              hitSlop={8}
+            >
+              <Avatar name={me?.name ?? '?'} size={34} />
+            </Pressable>
+          </View>
         </View>
         <Text style={s.headline}>{headline}</Text>
         {single && inn + out > 0 ? (
@@ -130,12 +138,17 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                     const mine = groupNet(g, state.expenses, state.payments)[meId] ?? 0;
                     const curs = groupCurrencies(g);
                     const curText = curs.length > 1 ? `, ${curs.map((c) => currency(c).symbol).join(' ')}` : '';
+                    const waiting = mode === 'cloud' && g.createdBy === userId ? asking(g.id) : 0;
                     return (
                       <Row
                         key={g.id}
                         left={<GroupBadge name={g.name} />}
                         title={g.name}
-                        subtitle={`${g.memberIds.length} people, ${count} expense${count === 1 ? '' : 's'}${curText}`}
+                        subtitle={
+                          waiting
+                            ? `${waiting} asking to join · tap to let them in`
+                            : `${g.memberIds.length} people, ${count} expense${count === 1 ? '' : 's'}${curText}`
+                        }
                         right={<BalanceTag amount={mine} currency={g.baseCurrency} kind="group" />}
                         onPress={() => navigation.navigate('Group', { groupId: g.id })}
                         last={i === state.groups.length - 1}
@@ -172,7 +185,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                         mode === 'cloud' && !p.userId
                           ? p.email
                             ? `Not joined yet · linked when they sign in with ${p.email}`
-                            : 'Not on Cosmic Khaata yet'
+                            : 'Not on Cosmic Balance yet'
                           : p.upiId || undefined
                       }
                       right={<TotalsTag totals={fb[p.id] ?? {}} />}
@@ -218,7 +231,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
         <Pressable
           onPress={() => navigation.navigate('About')}
           accessibilityRole="link"
-          accessibilityLabel="About Cosmic Khaata, developed by Tesseract Studio"
+          accessibilityLabel="About Cosmic Balance, developed by Tesseract Studio"
           style={s.credit}
         >
           <Text style={s.creditText}>Developed by</Text>
@@ -288,6 +301,7 @@ const s = StyleSheet.create({
   sheetHandle: { alignSelf: 'center', width: 36, height: 4, borderRadius: 2, backgroundColor: colors.line, marginBottom: space.md },
   sheetTitle: { fontFamily: fonts.medium, fontSize: 17, color: colors.text, paddingHorizontal: space.lg, marginBottom: space.sm },
   topRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   headline: {
     fontFamily: fonts.light,
     fontSize: 32,

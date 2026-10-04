@@ -46,3 +46,13 @@ begin
     create publication supabase_realtime;
   end if;
 end $$;
+
+-- Like Supabase's pg_net: requests are recorded here instead of being sent.
+create schema if not exists net;
+create table if not exists net.calls (id bigserial primary key, url text, body jsonb, headers jsonb, at timestamptz default now());
+create or replace function net.http_post(url text, body jsonb default '{}'::jsonb, params jsonb default '{}'::jsonb,
+                                         headers jsonb default '{"Content-Type": "application/json"}'::jsonb,
+                                         timeout_milliseconds integer default 2000)
+returns bigint language sql as $$
+  insert into net.calls (url, body, headers) values (url, body, headers) returning id
+$$;

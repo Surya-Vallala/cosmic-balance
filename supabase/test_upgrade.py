@@ -109,6 +109,8 @@ check(len(as_user('ravi', 'select * from public.groups')) == 1 and len(as_user('
 # --- Upgrade ---------------------------------------------------------------------
 psql(DB, '-f', os.path.join(HERE, 'schema.sql'))
 check(True, 'the current schema.sql runs cleanly on top of version 1')
+check(one('surya', 'select count(*) from public.notifications') == 0,
+      'upgrading (and the repairs it makes) sends nobody notifications')
 code = one('surya', 'select public.reset_invite_code(id) from public.groups where name = %s', ('Trial',))
 check(len(code) == 12, 'resetting an invite link works (version 1 needed pgcrypto, which Supabase keeps out of reach)')
 
@@ -144,5 +146,36 @@ except psycopg2.Error as e:
 check(err is not None, 'an old app version cannot overwrite the member list (it gets an error instead)')
 check(one('surya', 'update public.groups set name = %s where id = %s returning name', ('Trial run', g1)) == 'Trial run',
       'but renaming a group still works')
+
+
+# --- Version 3 (WhatsApp invites) to the current version ---------------------------------
+V3_COMMIT = 'cc2265f'
+v3 = subprocess.run(['git', '-C', HERE, 'show', f'{V3_COMMIT}:supabase/schema.sql'],
+                    check=True, capture_output=True, text=True).stdout
+with tempfile.NamedTemporaryFile('w', suffix='.sql', delete=False) as f:
+    f.write(v3)
+    v3_path = f.name
+conn.close()
+DB = 'ck_upgrade3'
+psql('postgres', '-c', f'drop database if exists {DB} with (force)', '-c', f'create database {DB}')
+psql(DB, '-f', os.path.join(HERE, 'test_stub.sql'))
+psql(DB, '-f', v3_path)
+conn = psycopg2.connect(dbname=DB, **PG)
+for n in ['surya', 'ravi', 'kiran']:
+    sign_up(n)
+me_s = one('surya', 'select id from public.ensure_me(%s)', ('Surya',))
+me_r = one('ravi', 'select id from public.ensure_me(%s)', ('Ravi',))
+g = str(uuid.uuid4())
+as_user('surya', 'insert into public.groups (id, name, member_ids) values (%s, %s, %s::uuid[])', (g, 'Goa', [me_s]))
+code = one('surya', 'select invite_code from public.groups where id = %s', (g,))
+psql(DB, '-f', os.path.join(HERE, 'schema.sql'))
+check(True, 'the current schema.sql runs cleanly on top of version 3')
+check(one('ravi', 'select public.request_join(%s)', (code,))['status'] == 'requested',
+      'a group made before join requests can be asked to join')
+req = one('surya', 'select id from public.join_requests')
+check(one('surya', "select body from public.notifications where kind = 'request'") == 'Ravi asked to join Goa',
+      'its creator is notified')
+as_user('surya', 'select public.approve_join_request(%s)', (req,))
+check(len(as_user('ravi', 'select * from public.groups')) == 1, 'and can let them in')
 
 print(f'\nAll {passed} upgrade checks passed.')
