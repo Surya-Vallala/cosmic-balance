@@ -4,9 +4,12 @@ import { useAuth } from '../auth';
 import {
   claimPersonInvite,
   CloudError,
+  friendLinkPreview,
   groupPreview,
   personInvitePreview,
+  requestFriend,
   requestJoin,
+  type FriendLinkPreview,
   type GroupPreview,
   type PersonInvitePreview,
 } from '../cloud/api';
@@ -16,9 +19,10 @@ import { useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import { Avatar, Button, Empty, GroupBadge, Screen, styles as ui } from '../ui';
 
-/** Opened from an invite link: a group's link, or a personal one sent to one friend. */
+/** Opened from a link: a group's link, a personal invite, or someone's friend link. */
 export default function JoinScreen({ navigation, route }: ScreenProps<'Join'>) {
   if (route.params.invite) return <PersonInvite code={route.params.invite} navigation={navigation} />;
+  if (route.params.friend) return <FriendInvite code={route.params.friend} navigation={navigation} />;
   return <GroupInvite code={route.params.code ?? ''} navigation={navigation} />;
 }
 
@@ -141,6 +145,138 @@ function PersonInvite({ code, navigation }: { code: string; navigation: Nav }) {
           onPress={() => navigation.popToTop()}
         />
       </View>
+      {error ? <Text style={[ui.error, { textAlign: 'center' }]}>{error}</Text> : null}
+    </Screen>
+  );
+}
+
+/** Someone's friend link: accept, and they confirm. */
+function FriendInvite({ code, navigation }: { code: string; navigation: Nav }) {
+  const { refresh } = useStore();
+  const { clearPendingFriend } = useAuth();
+  const [preview, setPreview] = useState<FriendLinkPreview | null | undefined>(undefined);
+  const [error, setError] = useState<string | null>(null);
+  const [canRetry, setCanRetry] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({ title: 'Friend request' });
+  }, [navigation]);
+
+  const fetchPreview = useCallback(() => {
+    friendLinkPreview(code)
+      .then((p) => {
+        setPreview(p);
+        clearPendingFriend();
+      })
+      .catch((e) => {
+        const retry = e instanceof CloudError && e.retry;
+        setError(e instanceof Error ? e.message : String(e));
+        setCanRetry(retry);
+        setPreview(null);
+        if (!retry) clearPendingFriend();
+      });
+  }, [code, clearPendingFriend]);
+
+  useEffect(() => {
+    fetchPreview();
+  }, [fetchPreview]);
+
+  const accept = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await requestFriend(code);
+      if (res.status === 'friends') await refresh();
+      setPreview((p) => (p ? { ...p, friends: res.status === 'friends', requested: res.status === 'requested' } : p));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+    setBusy(false);
+  };
+
+  if (preview === undefined && !error) {
+    return (
+      <Screen>
+        <Text style={s.loading}>Looking up the link…</Text>
+      </Screen>
+    );
+  }
+
+  if (!preview) {
+    return (
+      <Screen>
+        <Empty
+          title={canRetry ? 'Couldn’t open the link' : 'This friend link doesn’t work'}
+          body={error ?? 'It may have been replaced with a new one. Ask whoever sent it for a fresh link.'}
+          action={
+            <View style={{ gap: space.sm }}>
+              {canRetry ? (
+                <Button
+                  title="Try again"
+                  onPress={() => {
+                    setError(null);
+                    setCanRetry(false);
+                    setPreview(undefined);
+                    fetchPreview();
+                  }}
+                />
+              ) : null}
+              <Button title="Go to my groups" variant="secondary" onPress={() => navigation.popToTop()} />
+            </View>
+          }
+        />
+      </Screen>
+    );
+  }
+
+  const first = preview.name.split(/\s+/)[0];
+  if (preview.mine) {
+    return (
+      <Screen>
+        <Empty
+          title="This is your own friend link"
+          body="Send it to friends on WhatsApp. When one of them accepts, you’ll get a notification to confirm."
+          action={<Button title="Go to my groups" variant="secondary" onPress={() => navigation.popToTop()} />}
+        />
+      </Screen>
+    );
+  }
+
+  return (
+    <Screen>
+      <View style={s.head}>
+        <Avatar name={preview.name} size={64} />
+        <Text style={s.title}>
+          {preview.friends
+            ? `You and ${first} are friends`
+            : preview.requested
+              ? 'Request sent'
+              : `${preview.name} wants to be friends`}
+        </Text>
+        <Text style={s.meta}>
+          {preview.friends
+            ? `You’ll find ${first} under Friends, ready to split expenses with.`
+            : preview.requested
+              ? `${first} will confirm, and you’ll be friends on both sides. You’ll get a notification.`
+              : `Accept, and once ${first} confirms you can split expenses together, with or without a group.`}
+        </Text>
+      </View>
+      {preview.friends || preview.requested ? (
+        <>
+          {preview.requested ? <PushCard hideWhenOn /> : null}
+          <View style={{ marginTop: space.lg }}>
+            <Button title="Go to my groups" variant="secondary" onPress={() => navigation.popToTop()} />
+          </View>
+        </>
+      ) : (
+        <>
+          <Button title={busy ? 'Sending…' : 'Accept'} disabled={busy} onPress={accept} />
+          <View style={{ marginTop: space.sm }}>
+            <Button title="Not now" variant="ghost" disabled={busy} onPress={() => navigation.popToTop()} />
+          </View>
+        </>
+      )}
       {error ? <Text style={[ui.error, { textAlign: 'center' }]}>{error}</Text> : null}
     </Screen>
   );

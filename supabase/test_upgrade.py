@@ -178,4 +178,35 @@ check(one('surya', "select body from public.notifications where kind = 'request'
 as_user('surya', 'select public.approve_join_request(%s)', (req,))
 check(len(as_user('ravi', 'select * from public.groups')) == 1, 'and can let them in')
 
+# --- Version 4 (live before outside-group expenses and friend links) to the current version --
+V4_COMMIT = '2e73036'
+v4 = subprocess.run(['git', '-C', HERE, 'show', f'{V4_COMMIT}:supabase/schema.sql'],
+                    check=True, capture_output=True, text=True).stdout
+with tempfile.NamedTemporaryFile('w', suffix='.sql', delete=False) as f:
+    f.write(v4)
+    v4_path = f.name
+conn.close()
+DB = 'ck_upgrade4'
+psql('postgres', '-c', f'drop database if exists {DB} with (force)', '-c', f'create database {DB}')
+psql(DB, '-f', os.path.join(HERE, 'test_stub.sql'))
+psql(DB, '-f', v4_path)
+conn = psycopg2.connect(dbname=DB, **PG)
+for n in ['surya', 'ravi']:
+    sign_up(n)
+me_s = one('surya', 'select id from public.ensure_me(%s)', ('Surya',))
+me_r = one('ravi', 'select id from public.ensure_me(%s)', ('Ravi',))
+one('surya', 'select id from public.add_person_by_email(%s)', ('ravi@gmail.com',))
+g = str(uuid.uuid4())
+as_user('surya', 'insert into public.groups (id, name, member_ids) values (%s, %s, %s::uuid[])', (g, 'Goa', [me_s, me_r]))
+e_id, d = expense(g, me_s, [me_s, me_r])
+as_user('surya', 'insert into public.expenses (id, group_id, data) values (%s, %s, %s)', (e_id, g, d))
+psql(DB, '-f', os.path.join(HERE, 'schema.sql'))
+check(True, 'the current schema.sql runs cleanly on top of version 4')
+check(len(as_user('ravi', 'select * from public.expenses')) == 1, 'group expenses are still there and visible')
+n_id = str(uuid.uuid4())
+as_user('surya', 'insert into public.expenses (id, group_id, data) values (%s, null, %s)',
+        (n_id, json.dumps({'payers': {me_s: 100}, 'participants': [me_s, me_r], 'shares': {me_s: 50, me_r: 50}})))
+check(len(as_user('ravi', 'select * from public.expenses where group_id is null')) == 1, 'and expenses outside groups work')
+check(len(one('surya', 'select public.my_friend_code()')) == 12, 'and friend links work')
+
 print(f'\nAll {passed} upgrade checks passed.')

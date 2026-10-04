@@ -125,6 +125,16 @@ export interface Notice {
   read: boolean;
 }
 
+/** Shared mode: someone who opened your friend link and asked to be friends (or your own request). */
+export interface FriendRequest {
+  id: Id;
+  /** Who asked. */
+  fromPerson: Id;
+  /** The account it was sent to. */
+  toUser: string;
+  createdAt: string;
+}
+
 /** Shared mode: someone who opened a group's link and asked to join. */
 export interface JoinRequest {
   id: Id;
@@ -146,6 +156,8 @@ export interface AppState {
   notices?: Notice[];
   /** Shared mode only: requests you can see (yours, and to groups you let people into). */
   joinRequests?: JoinRequest[];
+  /** Shared mode only: friend requests sent to you, and ones you sent. */
+  friendRequests?: FriendRequest[];
 }
 
 export interface Debt {

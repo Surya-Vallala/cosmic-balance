@@ -15,6 +15,11 @@ export function inviteLink(code: string): string {
   return `${APP_URL}?join=${encodeURIComponent(code)}`;
 }
 
+/** Your friend link: whoever opens it can ask to be your friend. */
+export function friendLink(code: string): string {
+  return `${APP_URL}?friend=${encodeURIComponent(code)}`;
+}
+
 /** A friend's personal invite: opening it and signing in makes them that person. */
 export function personInviteLink(code: string): string {
   return `${APP_URL}?invite=${encodeURIComponent(code)}`;

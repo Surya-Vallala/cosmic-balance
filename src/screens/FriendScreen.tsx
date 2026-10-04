@@ -3,10 +3,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Supernova } from '../cosmos';
 import { relativeDay } from '../dates';
 import { shareNote, ShareLink, useInviteLinks } from '../invites';
-import { canRemoveFriend, friendBalanceByGroup, friendBalances, nonZero } from '../logic';
+import { canRemoveFriend, expensePeople, friendBalanceByGroup, friendBalances, nonGroupExpenses, nonZero } from '../logic';
 import { formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
 import { useStore } from '../store';
+import { OutsideExpenseRow } from './OutsideScreen';
 import { colors, fonts, space } from '../theme';
 import { Avatar, BalanceTag, Button, ConfirmButton, Empty, GroupBadge, List, Row, Screen, SectionTitle } from '../ui';
 
@@ -44,7 +45,17 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
   const between = state.transfers
     .filter((t) => (t.from === meId && t.to === friend.id) || (t.from === friend.id && t.to === meId))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
-  const hasHistory = between.length > 0 || sharedGroups.length > 0;
+  // Expenses outside groups that both of you are in.
+  const outsideExpenses = nonGroupExpenses(state.expenses).filter((e) => {
+    const ids = expensePeople(e);
+    return ids.includes(friend.id) && ids.includes(meId);
+  });
+  type Item = { kind: 'transfer'; date: string; t: (typeof between)[number] } | { kind: 'expense'; date: string; e: (typeof outsideExpenses)[number] };
+  const outsideItems: Item[] = [
+    ...between.map((t) => ({ kind: 'transfer' as const, date: t.date, t })),
+    ...outsideExpenses.map((e) => ({ kind: 'expense' as const, date: e.date, e })),
+  ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const hasHistory = outsideItems.length > 0 || sharedGroups.length > 0;
   const anythingToSettle = overall.length > 0 || byGroup.length > 0;
 
   const lines =
@@ -99,19 +110,25 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
       ) : null}
 
       <View style={s.actions}>
+        <View style={{ flex: 1 }}>
+          <Button
+            title="Add expense"
+            variant={anythingToSettle || notJoined ? 'secondary' : 'primary'}
+            onPress={() => navigation.navigate('ExpenseForm', { with: friend.id })}
+          />
+        </View>
         {anythingToSettle ? (
           <View style={{ flex: 1 }}>
             <Button title="Settle up" onPress={() => navigation.navigate('SettleAll', { friendId: friend.id })} />
           </View>
         ) : null}
-        <View style={{ flex: 1 }}>
-          <Button
-            title="Transfer money"
-            variant={anythingToSettle || notJoined ? 'secondary' : 'primary'}
-            onPress={() => navigation.navigate('Transfer', { from: meId, to: friend.id })}
-          />
-        </View>
       </View>
+      <Button
+        title="Transfer money"
+        variant="ghost"
+        onPress={() => navigation.navigate('Transfer', { from: meId, to: friend.id })}
+        style={{ marginTop: space.xs }}
+      />
 
       {byGroup.length > 0 ? (
         <>
@@ -132,13 +149,26 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
       ) : null}
 
       <SectionTitle>Outside groups</SectionTitle>
-      {between.length === 0 ? (
+      {outsideItems.length === 0 ? (
         <Text style={s.none}>
-          No transfers yet. Use Transfer money for cash or anything you give each other outside a group.
+          Nothing yet. Use Add expense to split something with {friend.name} without a group, or Transfer money for
+          cash and anything else you give each other.
         </Text>
       ) : (
         <List>
-          {between.map((t, i) => {
+          {outsideItems.map((it, i) => {
+            const last = i === outsideItems.length - 1;
+            if (it.kind === 'expense') {
+              return (
+                <OutsideExpenseRow
+                  key={it.e.id}
+                  e={it.e}
+                  last={last}
+                  onPress={() => navigation.navigate('ExpenseForm', { expenseId: it.e.id })}
+                />
+              );
+            }
+            const t = it.t;
             const mine = t.from === meId;
             const title =
               t.kind === 'settlement'
@@ -164,7 +194,7 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
                   </Text>
                 }
                 onPress={() => navigation.navigate('Transfer', { transferId: t.id })}
-                last={i === between.length - 1}
+                last={last}
               />
             );
           })}

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { relativeTime } from '../dates';
+import { IncomingFriendRequests } from '../friend-requests';
 import type { ScreenProps } from '../navigation';
 import { PushCard } from '../notify-ui';
 import { useStore } from '../store';
@@ -30,6 +31,7 @@ export default function NotificationsScreen({ navigation }: ScreenProps<'Notific
     <Screen>
       <PushCard hideWhenOn />
       <View style={{ marginTop: space.lg }}>
+        <IncomingFriendRequests />
         {notices.length === 0 ? (
           <List>
             <Empty

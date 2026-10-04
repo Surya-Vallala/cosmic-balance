@@ -22,6 +22,7 @@ const SCREENS: Name[] = [
   'About',
   'Join',
   'Notifications',
+  'Outside',
 ];
 const NUMBERS = new Set(['amount']);
 

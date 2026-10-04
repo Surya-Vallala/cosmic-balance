@@ -24,6 +24,7 @@ import GroupSummaryScreen from './src/screens/GroupSummaryScreen';
 import HomeScreen from './src/screens/HomeScreen';
 import JoinScreen from './src/screens/JoinScreen';
 import NotificationsScreen from './src/screens/NotificationsScreen';
+import OutsideScreen from './src/screens/OutsideScreen';
 import OnboardingScreen from './src/screens/OnboardingScreen';
 import SettleAllScreen from './src/screens/SettleAllScreen';
 import SettleUpScreen from './src/screens/SettleUpScreen';
@@ -201,7 +202,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { fai
 
 function AppNavigator() {
   const { state, ready, mode, loadError } = useStore();
-  const { pendingJoin, pendingInvite } = useAuth();
+  const { pendingJoin, pendingInvite, pendingFriend } = useAuth();
   const [navReady, setNavReady] = useState(false);
 
   // A notification tapped while the app was open.
@@ -212,7 +213,8 @@ function AppNavigator() {
     if (mode !== 'cloud' || !ready || !state.meId || !navReady || !navigationRef.isReady()) return;
     if (pendingInvite) navigationRef.navigate('Join', { invite: pendingInvite });
     else if (pendingJoin) navigationRef.navigate('Join', { code: pendingJoin });
-  }, [mode, ready, state.meId, pendingJoin, pendingInvite, navReady]);
+    else if (pendingFriend) navigationRef.navigate('Join', { friend: pendingFriend });
+  }, [mode, ready, state.meId, pendingJoin, pendingInvite, pendingFriend, navReady]);
 
   if (!ready) return <Loading />;
   if (mode === 'cloud' && !state.meId) return loadError ? <LoadFailed /> : <Loading />;
@@ -260,6 +262,7 @@ function AppNavigator() {
               <Stack.Screen name="About" component={AboutScreen} options={{ title: 'About' }} />
               <Stack.Screen name="Join" component={JoinScreen} options={{ title: 'Join a group' }} />
               <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
+              <Stack.Screen name="Outside" component={OutsideScreen} options={{ title: 'Outside groups' }} />
             </>
           )}
         </Stack.Navigator>

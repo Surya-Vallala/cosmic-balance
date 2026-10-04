@@ -2,7 +2,7 @@
 // Pure functions only, so they can be tested without a network.
 
 import { formatMoney } from '../money';
-import type { Activity, AppState, Expense, Group, Id, JoinRequest, Notice, Payment, Person, Transfer } from '../types';
+import type { Activity, AppState, Expense, FriendRequest, Group, Id, JoinRequest, Notice, Payment, Person, Transfer } from '../types';
 
 export interface PersonRow {
   id: string;
@@ -78,6 +78,7 @@ export interface Rows {
   join_requests?: JoinRequestRow[];
   /** Your friends list (person ids). */
   contacts?: { person_id: string }[];
+  friend_requests?: { id: string; from_person: string; to_user: string; created_at: string }[];
 }
 
 export function personFromRow(p: PersonRow): Person {
@@ -145,9 +146,20 @@ export function rowsToState(rows: Rows, meId: Id): AppState {
   for (const g of rows.groups) for (const m of g.member_ids) known.add(m);
   for (const t of rows.transfers) known.add(t.from_person).add(t.to_person);
   for (const p of rows.people) if (myUser && p.created_by === myUser && !p.user_id) known.add(p.id);
-  for (const r of rows.join_requests ?? []) {
-    if (!known.has(r.person_id) && people[r.person_id]) people[r.person_id] = { ...people[r.person_id], requesting: true };
+  for (const e of rows.expenses) {
+    if (!e.group_id) for (const id of [...Object.keys(e.data.payers ?? {}), ...Object.keys(e.data.shares ?? {})]) known.add(id);
   }
+  // (and people who asked to be your friend, until you accept)
+  const asking = [...(rows.join_requests ?? []).map((r) => r.person_id), ...(rows.friend_requests ?? []).map((r) => r.from_person)];
+  for (const id of asking) {
+    if (!known.has(id) && people[id]) people[id] = { ...people[id], requesting: true };
+  }
+  const friendRequests: FriendRequest[] = (rows.friend_requests ?? []).map((r) => ({
+    id: r.id,
+    fromPerson: r.from_person,
+    toUser: r.to_user,
+    createdAt: r.created_at,
+  }));
 
   const joinRequests: JoinRequest[] = (rows.join_requests ?? []).map((r) => ({
     id: r.id,
@@ -167,6 +179,7 @@ export function rowsToState(rows: Rows, meId: Id): AppState {
     activity: [],
     notices,
     joinRequests,
+    friendRequests,
   };
   state.activity = deriveActivity(rows, state);
   return state;

@@ -537,3 +537,53 @@ describe('removing a friend', () => {
     expect(canRemoveFriend(base(), 'me', 'u-me', true).ok).toBe(false);
   });
 });
+
+describe('expenses outside groups', () => {
+  const lunch = (overrides: Partial<Expense> = {}): Expense => ({
+    ...exp('n1', 90000, 'me', { me: 30000, ravi: 30000, priya: 30000 }),
+    groupId: null,
+    ...overrides,
+  });
+
+  it('count in my balance with each friend, in the currency paid', () => {
+    const fb = friendBalances('me', [], [lunch()], [], []);
+    expect(fb.ravi).toEqual({ INR: 30000 });
+    expect(fb.priya).toEqual({ INR: 30000 });
+  });
+  it('a friend who paid is owed by me', () => {
+    const fb = friendBalances('me', [], [lunch({ payers: { ravi: 90000 }, currency: 'USD' })], [], []);
+    expect(fb.ravi).toEqual({ USD: -30000 });
+    expect(fb.priya).toBeUndefined(); // Priya owes Ravi, not me
+  });
+  it('are not counted inside any group', () => {
+    const g: Group = { id: 'g', name: 'G', memberIds: ['me', 'ravi'], simplifyDebts: true, createdAt: '', baseCurrency: 'INR', rates: {} };
+    expect(groupDebts(g, [lunch()], [])).toEqual([]);
+  });
+  it('an overall settle-up clears them', () => {
+    const plan = planOverallSettlement('me', 'ravi', 'INR', [], [lunch()], [], []);
+    expect(plan.total).toBe(30000);
+    expect(plan.outside).toBe(30000);
+    const settled: Transfer = { id: 's', kind: 'settlement', from: 'ravi', to: 'me', currency: 'INR', amount: 30000, date: '', createdAt: '' };
+    expect(nonZeroOf(friendBalances('me', [], [lunch()], [], [settled]).ravi)).toEqual([]);
+  });
+  it('someone in one can’t be removed until it’s deleted', () => {
+    const s: AppState = {
+      version: 1,
+      meId: 'me',
+      people: { me: { id: 'me', name: 'Me' }, ravi: { id: 'ravi', name: 'Ravi' }, priya: { id: 'priya', name: 'Priya' } },
+      groups: [],
+      expenses: [lunch({ shares: { me: 45000, ravi: 45000 }, participants: ['me', 'ravi'], payers: { me: 45000, ravi: 45000 } })],
+      payments: [],
+      transfers: [],
+      activity: [],
+    };
+    // Settled (each paid their own share) but still in the expense.
+    const r = canRemoveFriend(s, 'ravi', null, false);
+    expect(r).toEqual({ ok: false, reason: expect.stringContaining('outside groups') });
+    expect(canRemoveFriend(s, 'priya', null, false).ok).toBe(true);
+  });
+});
+
+function nonZeroOf(t: Record<string, number> | undefined) {
+  return Object.entries(t ?? {}).filter(([, v]) => v !== 0);
+}

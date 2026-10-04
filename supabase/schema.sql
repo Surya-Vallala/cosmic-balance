@@ -1,4 +1,4 @@
--- Cosmic Balance database (version 4)
+-- Cosmic Balance database (version 5)
 -- Run this in Supabase (SQL Editor → New query → paste → Run).
 -- It is safe to run again, and running the newest version upgrades a
 -- database set up with an older one: everything is created only if missing
@@ -16,7 +16,10 @@
 --   groups     member_ids lists the people in the group.
 --   join_requests  people who opened a group's link and asked to join; the
 --              person who created the group approves or declines.
---   expenses   the expense itself is stored as JSON in `data`.
+--   friend_links, friend_requests  your friend link, and people who opened
+--              it and asked to be friends (you accept or decline).
+--   expenses   the expense itself is stored as JSON in `data`. An expense
+--              with no group is between the friends in it, outside groups.
 --   payments   settle-up payments inside a group (JSON in `data`).
 --   transfers  money between two people outside groups (JSON in `data`).
 --   notifications  what happened that concerns you (no amounts), shown in
@@ -77,6 +80,8 @@ create table if not exists public.expenses (
   updated_at timestamptz not null default now()
 );
 create index if not exists expenses_group_idx on public.expenses (group_id);
+-- Version 5: an expense between friends outside any group has no group.
+alter table public.expenses alter column group_id drop not null;
 
 create table if not exists public.transfers (
   id uuid primary key,
@@ -118,6 +123,22 @@ create table if not exists public.person_invites (
   created_by uuid references auth.users (id) on delete set null,
   created_at timestamptz not null default now()
 );
+
+-- Added in version 5: friend links. Anyone who opens yours can ask to be
+-- friends; you accept or decline each request.
+create table if not exists public.friend_links (
+  owner uuid primary key references auth.users (id) on delete cascade,
+  code text not null unique,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.friend_requests (
+  id uuid primary key default gen_random_uuid(),
+  from_person uuid not null references public.people (id) on delete cascade,
+  to_user uuid not null references auth.users (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (from_person, to_user)
+);
+create index if not exists friend_requests_to_idx on public.friend_requests (to_user);
 
 -- Added in version 4: asking to join a group from its link.
 create table if not exists public.join_requests (
@@ -200,6 +221,34 @@ returns boolean language sql stable security definer set search_path = public as
   )
 $$;
 
+-- Everyone in an expense: who paid and who shares it.
+create or replace function public.expense_people(d jsonb)
+returns uuid[] language sql immutable set search_path = public as $$
+  select coalesce(array_agg(distinct x::uuid), '{}'::uuid[]) from (
+    select jsonb_object_keys(case when jsonb_typeof(d -> 'payers') = 'object' then d -> 'payers' else '{}'::jsonb end) x
+    union
+    select jsonb_object_keys(case when jsonb_typeof(d -> 'shares') = 'object' then d -> 'shares' else '{}'::jsonb end)
+    union
+    select jsonb_array_elements_text(case when jsonb_typeof(d -> 'participants') = 'array' then d -> 'participants' else '[]'::jsonb end)
+  ) s
+  where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+$$;
+
+-- The people in each expense, kept with it (and indexed) so finding your
+-- expenses outside groups stays fast however many there are.
+do $$
+begin
+  if not exists (select 1 from information_schema.columns
+                 where table_schema = 'public' and table_name = 'expenses' and column_name = 'people') then
+    alter table public.expenses add column people uuid[] generated always as (public.expense_people(data)) stored;
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'expenses_size') then
+    alter table public.expenses add constraint expenses_size
+      check (octet_length(data::text) <= 20000 and cardinality(people) <= 60) not valid;
+  end if;
+end $$;
+create index if not exists expenses_people_idx on public.expenses using gin (people) where group_id is null;
+
 -- Who lets people in through a group's link: the person who created it (or,
 -- if their account is gone, any member).
 create or replace function public.can_approve(p_group uuid)
@@ -225,6 +274,10 @@ returns boolean language sql stable security definer set search_path = public as
                         or public.my_person_id() in (t.from_person, t.to_person)))
       or exists (select 1 from public.join_requests r
                  where r.person_id = p_person and public.can_approve(r.group_id))
+      or exists (select 1 from public.expenses e
+                 where e.group_id is null and e.people @> array[p_person, public.my_person_id()])
+      or exists (select 1 from public.friend_requests f
+                 where f.from_person = p_person and f.to_user = auth.uid())
 $$;
 
 -- Who may say which account a friend added by name really is (give them an
@@ -234,13 +287,26 @@ $$;
 -- group they aren't in themselves.
 create or replace function public.speaks_for(p_person uuid, p_user uuid)
 returns boolean language sql stable security definer set search_path = public as $$
-  select p_user is not null and (
-    exists (select 1 from public.people p where p.id = p_person and p.created_by = p_user)
-    or (exists (select 1 from public.groups g where p_person = any (g.member_ids))
-        and not exists (
-          select 1 from public.groups g
-          where p_person = any (g.member_ids)
-            and not exists (select 1 from public.people m where m.user_id = p_user and m.id = any (g.member_ids)))))
+  with me as (select id from public.people where user_id = p_user)
+  select p_user is not null
+    and (
+      exists (select 1 from public.people p where p.id = p_person and p.created_by = p_user)
+      or (exists (select 1 from public.groups g where p_person = any (g.member_ids))
+          and not exists (
+            select 1 from public.groups g
+            where p_person = any (g.member_ids)
+              and not exists (select 1 from me where me.id = any (g.member_ids)))))
+    -- and nothing private to others: expenses outside groups and transfers
+    -- with that name must all include you too.
+    and not exists (
+      select 1 from public.expenses e
+      where e.group_id is null and e.people @> array[p_person]
+        and not exists (select 1 from me where e.people @> array[me.id]))
+    and not exists (
+      select 1 from public.transfers t
+      where p_person in (t.from_person, t.to_person)
+        and t.created_by is distinct from p_user
+        and not exists (select 1 from me where me.id in (t.from_person, t.to_person)))
 $$;
 
 -- Turns notifications off for the rest of a step (used while merging people,
@@ -292,18 +358,7 @@ begin
   end loop;
 end $$;
 
--- Everyone in an expense: who paid and who shares it.
-create or replace function public.expense_people(d jsonb)
-returns uuid[] language sql immutable set search_path = public as $$
-  select coalesce(array_agg(distinct x::uuid), '{}'::uuid[]) from (
-    select jsonb_object_keys(case when jsonb_typeof(d -> 'payers') = 'object' then d -> 'payers' else '{}'::jsonb end) x
-    union
-    select jsonb_object_keys(case when jsonb_typeof(d -> 'shares') = 'object' then d -> 'shares' else '{}'::jsonb end)
-    union
-    select jsonb_array_elements_text(case when jsonb_typeof(d -> 'participants') = 'array' then d -> 'participants' else '[]'::jsonb end)
-  ) s
-  where x ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
-$$;
+
 
 -- ---------------------------------------------------------------------------
 -- Row level security
@@ -366,9 +421,23 @@ drop policy if exists groups_delete on public.groups;
 create policy groups_delete on public.groups for delete to authenticated
   using (created_by = auth.uid());
 
+-- In a group: its members. Outside groups: the people in the expense, who
+-- must include you and only people you know, and at least one other person.
 drop policy if exists expenses_all on public.expenses;
 create policy expenses_all on public.expenses for all to authenticated
-  using (public.is_member(group_id)) with check (public.is_member(group_id));
+  using ((group_id is not null and public.is_member(group_id))
+         or (group_id is null and people @> array[public.my_person_id()]))
+  with check ((group_id is not null and public.is_member(group_id))
+              or (group_id is null
+                  and public.my_person_id() = any (public.expense_people(data))
+                  and cardinality(public.expense_people(data)) >= 2
+                  and (select bool_and(public.can_see_person(x)) from unnest(public.expense_people(data)) x)));
+
+alter table public.friend_links enable row level security;     -- no policies: functions only
+alter table public.friend_requests enable row level security;
+drop policy if exists friend_requests_select on public.friend_requests;
+create policy friend_requests_select on public.friend_requests for select to authenticated
+  using (to_user = auth.uid() or from_person = public.my_person_id());
 
 drop policy if exists payments_all on public.payments;
 create policy payments_all on public.payments for all to authenticated
@@ -407,6 +476,8 @@ revoke insert, update, delete, truncate on public.contacts from anon, authentica
 revoke all on public.person_invites from anon, authenticated;
 revoke insert, update, delete, truncate on public.join_requests, public.notifications from anon, authenticated;
 revoke all on public.push_subscriptions, public.push_keys, public.app_settings from anon, authenticated;
+revoke all on public.friend_links from anon, authenticated;
+revoke insert, update, delete, truncate on public.friend_requests from anon, authenticated;
 
 -- ---------------------------------------------------------------------------
 -- Internal functions (not callable from the app)
@@ -449,6 +520,9 @@ begin
   end if;
   if exists (select 1 from public.groups where p_old = any (member_ids) and p_new = any (member_ids)) then
     raise exception 'You are already in a group with this person''s placeholder. Ask the group to remove it first.';
+  end if;
+  if exists (select 1 from public.expenses where data::text like '%' || o || '%' and data::text like '%' || n || '%') then
+    raise exception 'You are already in an expense with this person''s placeholder, so they can''t be linked.';
   end if;
   -- Rows are rewritten below but nothing really changes for anyone: no notifications.
   perform public.set_quiet(true);
@@ -911,6 +985,139 @@ begin
   delete from public.join_requests where id = p_request;
 end $$;
 
+-- Friend links ------------------------------------------------------------
+
+-- Your friend link's code (made the first time you ask).
+create or replace function public.my_friend_code()
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  c text;
+begin
+  if public.my_person_id() is null then
+    raise exception 'Not signed in';
+  end if;
+  insert into public.friend_links (owner, code)
+  values (auth.uid(), left(replace(gen_random_uuid()::text, '-', ''), 12))
+  on conflict (owner) do nothing;
+  select code into c from public.friend_links where owner = auth.uid();
+  return c;
+end $$;
+
+-- A new code: the old link stops working.
+create or replace function public.reset_friend_code()
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  c text := left(replace(gen_random_uuid()::text, '-', ''), 12);
+begin
+  if public.my_person_id() is null then
+    raise exception 'Not signed in';
+  end if;
+  insert into public.friend_links (owner, code) values (auth.uid(), c)
+  on conflict (owner) do update set code = excluded.code, created_at = now();
+  return c;
+end $$;
+
+-- What someone opening a friend link sees.
+create or replace function public.friend_link_preview(p_code text)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  l public.friend_links;
+  owner_person public.people;
+  me uuid := public.my_person_id();
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in';
+  end if;
+  select * into l from public.friend_links where code = p_code;
+  if not found then
+    return null;
+  end if;
+  select * into owner_person from public.people where user_id = l.owner;
+  return jsonb_build_object(
+    'name', coalesce(owner_person.name, 'A friend'),
+    'mine', l.owner = auth.uid(),
+    'friends', exists (select 1 from public.contacts c where c.owner = l.owner and c.person_id = me),
+    'requested', exists (select 1 from public.friend_requests f where f.from_person = me and f.to_user = l.owner)
+  );
+end $$;
+
+-- Ask to be friends with whoever's link this is. They're told, and accept or decline.
+create or replace function public.request_friend(p_code text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := public.my_person_id();
+  l public.friend_links;
+  owner_person uuid;
+  inserted uuid;
+begin
+  if me is null then
+    raise exception 'Not signed in';
+  end if;
+  select * into l from public.friend_links where code = p_code;
+  if not found then
+    raise exception 'This friend link doesn''t work any more. Ask for a new one.';
+  end if;
+  if l.owner = auth.uid() then
+    raise exception 'This is your own friend link. Send it to a friend on WhatsApp.';
+  end if;
+  select id into owner_person from public.people where user_id = l.owner;
+  -- Already friends (on their side): make it both ways and stop there.
+  if exists (select 1 from public.contacts c where c.owner = l.owner and c.person_id = me) then
+    insert into public.contacts (owner, person_id) values (auth.uid(), owner_person) on conflict do nothing;
+    return jsonb_build_object('status', 'friends');
+  end if;
+  insert into public.friend_requests (from_person, to_user) values (me, l.owner)
+    on conflict (from_person, to_user) do nothing
+    returning id into inserted;
+  if inserted is not null and not exists (
+    select 1 from public.notifications n
+    where n.actor = auth.uid() and n.user_id = l.owner and n.kind = 'friend_request'
+      and n.created_at > now() - interval '1 day'
+  ) then
+    insert into public.notifications (user_id, kind, body, actor)
+    values (l.owner, 'friend_request', left(public.actor_name() || ' wants to be friends on Cosmic Balance', 300), auth.uid());
+  end if;
+  return jsonb_build_object('status', 'requested');
+end $$;
+
+-- Accept a friend request: you're friends on both sides.
+create or replace function public.approve_friend_request(p_request uuid)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  r public.friend_requests;
+  me uuid := public.my_person_id();
+begin
+  if me is null then
+    raise exception 'Not signed in';
+  end if;
+  select * into r from public.friend_requests where id = p_request for update;
+  if not found then
+    raise exception 'That request isn''t waiting any more.';
+  end if;
+  if r.to_user <> auth.uid() then
+    raise exception 'Only the person it was sent to can accept it.';
+  end if;
+  delete from public.friend_requests where id = r.id;
+  insert into public.contacts (owner, person_id) values (auth.uid(), r.from_person) on conflict do nothing;
+  insert into public.contacts (owner, person_id)
+    select p.user_id, me from public.people p where p.id = r.from_person and p.user_id is not null
+    on conflict do nothing;
+  perform public.notify_people(array[r.from_person], 'friend_accepted',
+    public.actor_name() || ' accepted your friend request', null, me);
+  return r.from_person;
+end $$;
+
+-- Decline a request sent to you, or take back one you sent.
+create or replace function public.decline_friend_request(p_request uuid)
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in';
+  end if;
+  delete from public.friend_requests
+    where id = p_request and (to_user = auth.uid() or from_person = public.my_person_id());
+end $$;
+
 -- Versions of the app before join requests joined straight away; they must
 -- ask now like everyone else.
 create or replace function public.join_group(p_code text, p_claim uuid default null)
@@ -967,6 +1174,12 @@ begin
     end if;
   end loop;
 
+  if exists (select 1 from public.expenses e
+             where e.group_id is null and p_person = any (public.expense_people(e.data))
+               and me = any (public.expense_people(e.data))) then
+    raise exception '% is in expenses outside groups. Delete those expenses first, then you can remove %.', p.name, p.name;
+  end if;
+
   if exists (
     select 1 from (
       select t.data ->> 'currency' as cur,
@@ -988,6 +1201,7 @@ begin
     where (t.from_person = me and t.to_person = p_person) or (t.from_person = p_person and t.to_person = me);
   delete from public.contacts where owner = auth.uid() and person_id = p_person;
   delete from public.join_requests r where r.person_id = p_person and public.can_approve(r.group_id);
+  delete from public.friend_requests f where f.from_person = p_person and f.to_user = auth.uid();
 
   -- Someone you added who never joined: gone for good, unless others still use them.
   if p.user_id is null and p.created_by = auth.uid() then
@@ -1131,6 +1345,12 @@ begin
     who := public.expense_people(new.data) || public.expense_people(old.data);
     verb := 'edited';
   end if;
+  if gid is null then
+    -- Outside groups: tell the others in it.
+    perform public.notify_people(who, 'expense', public.actor_name() || ' ' || verb || ' an expense with you',
+                                 null, public.my_person_id());
+    return null;
+  end if;
   select name into gname from public.groups where id = gid;
   if gname is null then
     return null; -- the whole group is being deleted
@@ -1208,6 +1428,20 @@ begin
   return null;
 end $$;
 
+-- An expense stays where it was made: moving it would hide it from people
+-- without telling them.
+create or replace function public.keep_expense_group()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  if new.group_id is distinct from old.group_id then
+    raise exception 'An expense can''t be moved to another group. Delete it and add it again.';
+  end if;
+  return new;
+end $$;
+drop trigger if exists expenses_keep_group on public.expenses;
+create trigger expenses_keep_group before update of group_id on public.expenses
+  for each row execute function public.keep_expense_group();
+
 drop trigger if exists expenses_notify on public.expenses;
 create trigger expenses_notify after insert or update or delete on public.expenses
   for each row execute function public.on_expense_change();
@@ -1267,7 +1501,7 @@ on conflict (key) do nothing;
 -- Supabase, so start from nothing and allow signed-in people only.
 revoke all on function public.merge_person(uuid, uuid), public.person_for_account(uuid),
   public.set_quiet(boolean), public.notify_people(uuid[], text, text, uuid, uuid), public.actor_name(),
-  public.expense_people(jsonb), public.on_expense_change(), public.on_payment_change(),
+  public.on_expense_change(), public.on_payment_change(), public.keep_expense_group(),
   public.on_transfer_change(), public.on_group_change(), public.kick_push()
   from public, anon, authenticated;
 -- Only the send-push function (with the project's secret key) uses these.
@@ -1278,7 +1512,9 @@ grant execute on function public.push_keys_get(), public.push_keys_init(text, js
   public.claim_push_batch(int), public.drop_push_subscription(text)
   to service_role;
 revoke all on function public.my_person_id(), public.is_member(uuid), public.can_see_person(uuid),
-  public.can_approve(uuid), public.speaks_for(uuid, uuid),
+  public.can_approve(uuid), public.speaks_for(uuid, uuid), public.expense_people(jsonb),
+  public.my_friend_code(), public.reset_friend_code(), public.friend_link_preview(text), public.request_friend(text),
+  public.approve_friend_request(uuid), public.decline_friend_request(uuid),
   public.ensure_me(text), public.add_person_by_email(text, text), public.set_person_email(uuid, text),
   public.set_group_members(uuid, uuid[], uuid[]), public.group_preview(text),
   public.join_group(text, uuid), public.reset_invite_code(uuid),
@@ -1288,7 +1524,9 @@ revoke all on function public.my_person_id(), public.is_member(uuid), public.can
   public.save_push_subscription(text, text, text), public.delete_push_subscription(text), public.push_public_key()
   from public, anon;
 grant execute on function public.my_person_id(), public.is_member(uuid), public.can_see_person(uuid),
-  public.can_approve(uuid), public.speaks_for(uuid, uuid),
+  public.can_approve(uuid), public.speaks_for(uuid, uuid), public.expense_people(jsonb),
+  public.my_friend_code(), public.reset_friend_code(), public.friend_link_preview(text), public.request_friend(text),
+  public.approve_friend_request(uuid), public.decline_friend_request(uuid),
   public.ensure_me(text), public.add_person_by_email(text, text), public.set_person_email(uuid, text),
   public.set_group_members(uuid, uuid[], uuid[]), public.group_preview(text),
   public.join_group(text, uuid), public.reset_invite_code(uuid),
@@ -1342,7 +1580,8 @@ do $$
 declare t text;
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
-    foreach t in array array['people', 'groups', 'expenses', 'payments', 'transfers', 'join_requests', 'notifications'] loop
+    foreach t in array array['people', 'groups', 'expenses', 'payments', 'transfers', 'join_requests', 'notifications',
+                             'friend_requests'] loop
       if not exists (select 1 from pg_publication_tables
                      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
         execute format('alter publication supabase_realtime add table public.%I', t);

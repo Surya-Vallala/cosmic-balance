@@ -1,11 +1,12 @@
 import React, { useLayoutEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { fromBase, groupCurrencies, groupSummary, toBase } from '../logic';
+import { Supernova } from '../cosmos';
+import { fromBase, groupCurrencies, groupDebts, groupSummary, toBase } from '../logic';
 import { currency, formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
 import { useName, useStore } from '../store';
 import { colors, fonts, space, tintFor } from '../theme';
-import { Avatar, BalanceTag, Empty, List, rateText, Screen, SectionTitle, Segmented } from '../ui';
+import { Avatar, BalanceTag, Button, Empty, List, rateText, Screen, SectionTitle, Segmented } from '../ui';
 
 export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'GroupSummary'>) {
   const { state } = useStore();
@@ -31,6 +32,7 @@ export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'G
   const members = [...sum.members].sort((a, b) => (a.id === meId ? -1 : b.id === meId ? 1 : b.paid - a.paid));
   const payersForBar = members.filter((m) => m.paid > 0);
   const name = (id: string) => state.people[id]?.name ?? '?';
+  const debts = groupDebts(group, state.expenses, state.payments);
 
   return (
     <Screen>
@@ -74,6 +76,52 @@ export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'G
           Converted at the group’s rates: {currencies.slice(1).map((c) => rateText(group, c)).join(', ')}.
         </Text>
       ) : null}
+
+      <SectionTitle>Who pays whom</SectionTitle>
+      {debts.length === 0 ? (
+        <View style={s.settled}>
+          {sum.expenseCount > 0 ? <Supernova size={64} /> : null}
+          <Text style={s.settledText}>
+            {sum.expenseCount > 0 ? 'Everyone in this group is settled up.' : 'Nothing to settle yet.'}
+          </Text>
+        </View>
+      ) : (
+        <>
+          <List>
+            {debts.map((d, i) => {
+              const involvesMe = d.from === meId || d.to === meId;
+              const text =
+                d.from === meId
+                  ? `You pay ${nameOf(d.to)}`
+                  : d.to === meId
+                    ? `${nameOf(d.from)} pays you`
+                    : `${nameOf(d.from)} pays ${nameOf(d.to)}`;
+              const tone = d.from === meId ? colors.owe : d.to === meId ? colors.owed : colors.textSoft;
+              return (
+                <View key={`${d.from}-${d.to}`} style={[s.personRow, i < debts.length - 1 && s.divider]}>
+                  <Avatar name={name(d.from)} size={32} />
+                  <View style={{ flex: 1, marginLeft: space.md }}>
+                    <Text style={s.personName}>{text}</Text>
+                    <Text style={[s.debtAmount, { color: tone }]}>{show(d.amount)}</Text>
+                  </View>
+                  <Button
+                    small
+                    title="Settle"
+                    variant={involvesMe ? 'primary' : 'secondary'}
+                    accessibilityLabel={`Settle: ${text}`}
+                    onPress={() =>
+                      navigation.navigate('SettleUp', { groupId: group.id, from: d.from, to: d.to, amount: d.amount })
+                    }
+                  />
+                </View>
+              );
+            })}
+          </List>
+          {group.simplifyDebts ? (
+            <Text style={s.note}>Debts are simplified so the group needs the fewest payments.</Text>
+          ) : null}
+        </>
+      )}
 
       {payersForBar.length > 0 ? (
         <>
@@ -139,6 +187,9 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 const s = StyleSheet.create({
+  settled: { alignItems: 'center', gap: space.sm, paddingVertical: space.md },
+  settledText: { fontSize: 14, color: colors.textSoft },
+  debtAmount: { fontFamily: fonts.medium, fontSize: 15, marginTop: 2 },
   kicker: { fontSize: 13, fontWeight: '600', color: colors.muted },
   total: { fontFamily: fonts.light, fontSize: 44, lineHeight: 52, color: colors.text, letterSpacing: -1, marginTop: 2 },
   meta: { fontSize: 14, color: colors.muted, marginTop: 2 },

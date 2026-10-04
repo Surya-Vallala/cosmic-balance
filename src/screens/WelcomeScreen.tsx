@@ -8,8 +8,8 @@ import { sheetStyle, StudioCredit, WelcomeHero } from './WelcomeHero';
 
 /** First screen: sign in to share with friends, or use the app on this phone only. */
 export default function WelcomeScreen() {
-  const { signInWithGoogle, chooseThisPhoneOnly, authError, pendingJoin, pendingInvite } = useAuth();
-  const invited = !!(pendingJoin || pendingInvite);
+  const { signInWithGoogle, chooseThisPhoneOnly, authError, pendingJoin, pendingInvite, pendingFriend } = useAuth();
+  const invited = !!(pendingJoin || pendingInvite || pendingFriend);
   const insets = useSafeAreaInsets();
   const [busy, setBusy] = useState(false);
 
@@ -20,12 +20,18 @@ export default function WelcomeScreen() {
         {invited ? (
           <View style={s.invite}>
             <Text style={s.inviteTitle}>
-              {pendingInvite ? 'A friend invited you to Cosmic Balance' : 'You’ve been invited to a group'}
+              {pendingInvite
+                ? 'A friend invited you to Cosmic Balance'
+                : pendingJoin
+                  ? 'You’ve been invited to a group'
+                  : 'A friend wants to connect on Cosmic Balance'}
             </Text>
             <Text style={s.inviteBody}>
               {pendingInvite
                 ? 'Sign in with Google to see what’s been shared with you. Any Google account works.'
-                : 'Sign in with Google to join it and see what’s been shared.'}
+                : pendingJoin
+                  ? 'Sign in with Google to join it and see what’s been shared.'
+                  : 'Sign in with Google to accept, so you can split expenses together. Any Google account works.'}
             </Text>
           </View>
         ) : null}

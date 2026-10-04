@@ -11,6 +11,7 @@ import { turnOffPush } from './push';
 const MODE_KEY = 'cosmic-khaata:mode';
 const PENDING_JOIN_KEY = 'cosmic-khaata:pending-join';
 const PENDING_INVITE_KEY = 'cosmic-khaata:pending-invite';
+const PENDING_FRIEND_KEY = 'cosmic-khaata:pending-friend';
 
 export type Mode = 'loading' | 'welcome' | 'local' | 'cloud';
 
@@ -23,6 +24,9 @@ interface Auth {
   /** Personal invite code (sent to one friend on WhatsApp) that hasn't been used yet. */
   pendingInvite: string | null;
   clearPendingInvite: () => void;
+  /** Friend link code (someone's ?friend= link) that hasn't been used yet. */
+  pendingFriend: string | null;
+  clearPendingFriend: () => void;
   authError: string | null;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -36,18 +40,20 @@ const AuthContext = createContext<Auth | null>(null);
  * Read ?join=CODE (group invite), ?invite=CODE (personal invite) and sign-in
  * errors from the address, then tidy it.
  */
-function readUrl(): { join: string | null; invite: string | null; error: string | null } {
-  if (Platform.OS !== 'web' || typeof window === 'undefined') return { join: null, invite: null, error: null };
+function readUrl(): { join: string | null; invite: string | null; friend: string | null; error: string | null } {
+  if (Platform.OS !== 'web' || typeof window === 'undefined') return { join: null, invite: null, friend: null, error: null };
   const url = new URL(window.location.href);
   const join = url.searchParams.get('join');
   const invite = url.searchParams.get('invite');
+  const friend = url.searchParams.get('friend');
   const error = url.searchParams.get('error_description') || url.hash.match(/error_description=([^&]+)/)?.[1] || null;
-  if (join || invite) {
+  if (join || invite || friend) {
     url.searchParams.delete('join');
     url.searchParams.delete('invite');
+    url.searchParams.delete('friend');
     window.history.replaceState(null, '', url.pathname + (url.search === '?' ? '' : url.search) + url.hash);
   }
-  return { join, invite, error: error ? decodeURIComponent(error.replace(/\+/g, ' ')) : null };
+  return { join, invite, friend, error: error ? decodeURIComponent(error.replace(/\+/g, ' ')) : null };
 }
 
 // Read once, when the app loads: the address is tidied straight after.
@@ -59,10 +65,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [localChosen, setLocalChosen] = useState<boolean | null>(null);
   const [pendingJoin, setPendingJoin] = useState<string | null>(null);
   const [pendingInvite, setPendingInvite] = useState<string | null>(null);
+  const [pendingFriend, setPendingFriend] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(initialUrl.error);
 
   useEffect(() => {
-    const { join, invite } = initialUrl;
+    const { join, invite, friend } = initialUrl;
     (async () => {
       try {
         // Kept on the phone so the invite survives the trip to Google and back.
@@ -77,6 +84,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setPendingInvite(invite);
         } else {
           setPendingInvite(await AsyncStorage.getItem(PENDING_INVITE_KEY));
+        }
+        if (friend) {
+          await AsyncStorage.setItem(PENDING_FRIEND_KEY, friend);
+          setPendingFriend(friend);
+        } else {
+          setPendingFriend(await AsyncStorage.getItem(PENDING_FRIEND_KEY));
         }
         setLocalChosen((await AsyncStorage.getItem(MODE_KEY)) === 'local');
       } catch {
@@ -135,6 +148,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPendingInvite(null);
   }, []);
 
+  const clearPendingFriend = useCallback(() => {
+    AsyncStorage.removeItem(PENDING_FRIEND_KEY).catch(() => {});
+    setPendingFriend(null);
+  }, []);
+
   const mode: Mode = !sessionChecked || localChosen === null ? 'loading' : session ? 'cloud' : localChosen ? 'local' : 'welcome';
 
   const value = useMemo(
@@ -145,6 +163,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearPendingJoin,
       pendingInvite,
       clearPendingInvite,
+      pendingFriend,
+      clearPendingFriend,
       authError,
       signInWithGoogle,
       signOut,
@@ -158,6 +178,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearPendingJoin,
       pendingInvite,
       clearPendingInvite,
+      pendingFriend,
+      clearPendingFriend,
       authError,
       signInWithGoogle,
       signOut,

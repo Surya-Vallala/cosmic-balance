@@ -17,6 +17,11 @@ export function inviteMessage(opts: { friend: string; groups: string[]; link: st
   return `Hi${first}! I’ve added you ${where}, so we can split our expenses. Tap to join (sign in with Google): ${opts.link}`;
 }
 
+/** The message with your friend link. */
+export function friendRequestMessage(opts: { name: string; link: string }): string {
+  return `Hi! It’s ${opts.name.split(/\s+/)[0]}. Let’s be friends on ${APP} so we can split our expenses. Tap to connect (sign in with Google): ${opts.link}`;
+}
+
 /** The message for a group's link (anyone can ask to join; the group's creator lets them in). */
 export function groupLinkMessage(opts: { group: string; link: string }): string {
   return `Join “${opts.group}” on ${APP} so we can split our expenses. Tap to ask to join (sign in with Google): ${opts.link}`;

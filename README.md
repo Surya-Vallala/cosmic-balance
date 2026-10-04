@@ -20,7 +20,8 @@ There are two ways to use it:
 - **Expenses** split four ways: equally (pick who shared), exact amounts, percentages, or shares (e.g. 2 for a couple, 1 for everyone else). Amounts are kept in paise, so splits always add up exactly.
 - **Several currencies per group**: a Thailand trip can use ₹ and ฿ together. The first currency is the group's main one; for each other currency the group sets one exchange rate (it starts at an approximate value and can be changed any time). Each expense is entered in the currency it was paid in, using the dropdown next to the amount.
 - **Balances** per group and per friend, in plain sentences ("Ravi pays you ₹450"). In multi-currency groups every balance is also shown in the other currencies ("or ฿156.79").
-- **Group summary**: total spending (overall and per currency), who paid what share of it, and for each person what they paid, what their share cost, and what they owe or get back. Switch the whole summary between the group's currencies.
+- **Group summary**: who pays whom (with Settle buttons), total spending (overall and per currency), who paid what share of it, and for each person what they paid, what their share cost, and what they owe or get back. Switch the whole summary between the group's currencies.
+- **Expenses outside groups**: split something with one or more friends without making a group (Add expense → No group, or Add expense on a friend's page). Any currency, every split type. They count in your balance with each friend, and show on Home under **Outside groups** and on each friend's page.
 - **Transfers outside groups**: record money one person gave another (cash, a UPI transfer, a loan). It isn't part of any group, but it counts in your overall balance with that friend.
 - **Overall settle-up with a friend**: adds up every group you share plus transfers, and settles it with one payment. Each group then shows the two of you as settled. (Groups in different main currencies are settled separately.)
 - **Simplify debts** (on by default, can be switched off per group): the group settles with the fewest payments.
@@ -40,6 +41,8 @@ There are two ways to use it:
 1. Add them by name, in a group's "Who's in it" or under Friends → Add a friend.
 2. Their friend page (**Invite …**), or the group's **Not joined yet** list, shows their link with a **Share** button. Share opens the phone's share menu: pick WhatsApp, then their chat.
 3. They open the link and sign in with Google (any Google account). They see who invited them and to which groups, tap **Accept invite**, and everything recorded for them becomes theirs. No approval is needed: the link was made for them. Each link works once, and you're notified when they accept.
+
+**Or send your friend link** (Friends → Add a friend → **Send a friend request**): share it on WhatsApp. Whoever opens it signs in and taps **Accept**; you get a notification and accept (or decline) them under Friends, and you're friends on both sides. **Make a new link** retires the old one.
 
 **Or add friends by their Gmail address** (in a group's "Who's in it", or Friends → Add a friend):
 

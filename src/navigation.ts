@@ -6,14 +6,17 @@ export type RootStackParamList = {
   Group: { groupId: string };
   GroupSummary: { groupId: string };
   GroupForm: { groupId?: string };
-  ExpenseForm: { groupId: string; expenseId?: string };
+  /** No groupId: an expense outside groups, with the friends in `with` (comma-separated ids). */
+  ExpenseForm: { groupId?: string; expenseId?: string; with?: string };
+  /** Expenses outside groups. */
+  Outside: undefined;
   SettleUp: { groupId: string; from?: string; to?: string; amount?: number; paymentId?: string };
   Friend: { friendId: string };
   FriendForm: { personId?: string };
   Transfer: { transferId?: string; from?: string; to?: string };
   SettleAll: { friendId: string; currency?: string };
   About: undefined;
-  Join: { code?: string; invite?: string };
+  Join: { code?: string; invite?: string; friend?: string };
   Notifications: undefined;
 };
 

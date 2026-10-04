@@ -4,6 +4,7 @@ import { useAuth } from '../auth';
 import { isEmail } from '../emails';
 import { exportCsv } from '../export';
 import type { ScreenProps } from '../navigation';
+import { MyFriendLink } from '../friend-requests';
 import { PushCard } from '../notify-ui';
 import { uid, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
@@ -115,6 +116,13 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
         <Button title={busy ? 'Saving…' : existing ? 'Save changes' : 'Add friend'} onPress={save} disabled={busy} />
       }
     >
+      {mode === 'cloud' && !existing ? (
+        <>
+          <Text style={[s.sectionHead, { marginTop: 0 }]}>Send a friend request</Text>
+          <MyFriendLink />
+          <Text style={s.sectionHead}>Or add them yourself</Text>
+        </>
+      ) : null}
       <Field
         label={isMe ? 'Your name' : 'Name'}
         value={name}
@@ -228,6 +236,7 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
 }
 
 const s = StyleSheet.create({
+  sectionHead: { fontFamily: fonts.medium, fontSize: 15, color: colors.textSoft, marginTop: space.xl, marginBottom: space.sm },
   readHead: { alignItems: 'center', marginTop: space.lg, marginBottom: space.xl, gap: space.sm },
   readName: { fontFamily: fonts.light, fontSize: 26, color: colors.text },
   readUpi: { fontSize: 14, color: colors.muted },

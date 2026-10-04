@@ -4,7 +4,7 @@ import type { GroupRow, Op, PersonRow, Rows } from './sync';
 
 const TABLES = ['people', 'groups', 'expenses', 'payments', 'transfers'] as const;
 /** Tables added later: an older database simply doesn't have them yet. */
-const OPTIONAL_TABLES = ['notifications', 'join_requests', 'contacts'] as const;
+const OPTIONAL_TABLES = ['notifications', 'join_requests', 'contacts', 'friend_requests'] as const;
 
 /**
  * A request that didn't work. `retry` is true when it's worth trying again
@@ -68,6 +68,7 @@ export async function fetchRows(): Promise<Rows> {
         supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(100),
         supabase.from('join_requests').select('*'),
         supabase.from('contacts').select('person_id'),
+        supabase.from('friend_requests').select('*'),
       ]),
     ]);
   } catch (e) {
@@ -92,6 +93,8 @@ const NOTIFYING = new Set([
   'claim_person_invite',
   'request_join',
   'approve_join_request',
+  'request_friend',
+  'approve_friend_request',
 ]);
 
 async function rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
@@ -268,6 +271,42 @@ export function declineJoinRequest(requestId: string): Promise<void> {
   return rpc<void>('decline_join_request', { p_request: requestId });
 }
 
+// Friend links ------------------------------------------------------------------
+
+/** Your friend link's code. */
+export function myFriendCode(): Promise<string> {
+  return rpc<string>('my_friend_code', {});
+}
+
+/** A new code: the old link stops working. */
+export function resetFriendCode(): Promise<string> {
+  return rpc<string>('reset_friend_code', {});
+}
+
+export interface FriendLinkPreview {
+  name: string;
+  mine: boolean;
+  friends: boolean;
+  requested: boolean;
+}
+
+export async function friendLinkPreview(code: string): Promise<FriendLinkPreview | null> {
+  return (await rpc<FriendLinkPreview | null>('friend_link_preview', { p_code: code })) ?? null;
+}
+
+/** Ask to be friends with whoever's link this is. */
+export function requestFriend(code: string): Promise<{ status: 'requested' | 'friends' }> {
+  return rpc('request_friend', { p_code: code });
+}
+
+export function approveFriendRequest(requestId: string): Promise<string> {
+  return rpc<string>('approve_friend_request', { p_request: requestId });
+}
+
+export function declineFriendRequest(requestId: string): Promise<void> {
+  return rpc<void>('decline_friend_request', { p_request: requestId });
+}
+
 export function resetInviteCode(groupId: string): Promise<string> {
   return rpc<string>('reset_invite_code', { p_group: groupId });
 }
@@ -275,7 +314,7 @@ export function resetInviteCode(groupId: string): Promise<string> {
 /** Call `onChange` whenever anything you can see changes. Returns a stop function. */
 export function subscribe(onChange: () => void): () => void {
   let channel = supabase.channel('cosmic-balance-changes');
-  for (const t of [...TABLES, 'join_requests', 'notifications']) {
+  for (const t of [...TABLES, 'join_requests', 'notifications', 'friend_requests']) {
     channel = channel.on('postgres_changes' as never, { event: '*', schema: 'public', table: t } as never, onChange);
   }
   // Coming back after the connection dropped: catch up on anything missed.

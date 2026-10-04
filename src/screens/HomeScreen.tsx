@@ -3,9 +3,10 @@ import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Libra } from '../cosmos';
 import { relativeDay } from '../dates';
-import { friendBalances, groupCurrencies, groupNet, nonZero, sumTotals } from '../logic';
+import { friendBalances, groupCurrencies, groupNet, nonGroupExpenses, nonZero, outsideBalances, sumTotals } from '../logic';
 import { currency, formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
+import { IncomingFriendRequests } from '../friend-requests';
 import { Bell } from '../notify-ui';
 import { useStore } from '../store';
 import { colors, fonts, space } from '../theme';
@@ -69,9 +70,15 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
     .filter((p) => p.id !== meId && !p.requesting)
     .sort((a, b) => friendTotal(b.id) - friendTotal(a.id) || a.name.localeCompare(b.name));
 
+  const outsideCount = nonGroupExpenses(state.expenses).length;
+  // My balance across expenses outside groups, per currency.
+  const outsideNet = nonZero(
+    sumTotals(Object.values(outsideBalances(meId, [], [], [], nonGroupExpenses(state.expenses)))),
+  );
   const addExpense = () => {
-    if (state.groups.length === 0) navigation.navigate('GroupForm', {});
-    else if (state.groups.length === 1) navigation.navigate('ExpenseForm', { groupId: state.groups[0].id });
+    // Pick a group, or no group (with friends); straight to the form when there's only one way.
+    if (state.groups.length === 0 && friends.length === 0) navigation.navigate('GroupForm', {});
+    else if (state.groups.length === 0) navigation.navigate('ExpenseForm', {});
     else setPickGroup(true);
   };
 
@@ -125,11 +132,25 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
         <View style={{ marginTop: space.lg }}>
           {tab === 'groups' ? (
             state.groups.length === 0 ? (
-              <Empty
-                title="No groups yet"
-                body="Make a group for a trip, your flat, or the Friday dinner gang."
-                action={<Button title="Start a group" onPress={() => navigation.navigate('GroupForm', {})} />}
-              />
+              <>
+                {outsideCount > 0 ? (
+                  <List style={{ marginBottom: space.lg }}>
+                    <Row
+                      left={<OutsideBadge />}
+                      title="Outside groups"
+                      subtitle={`${outsideCount} expense${outsideCount === 1 ? '' : 's'} with friends, not in a group`}
+                      right={<TotalsTag totals={Object.fromEntries(outsideNet)} />}
+                      onPress={() => navigation.navigate('Outside')}
+                      last
+                    />
+                  </List>
+                ) : null}
+                <Empty
+                  title="No groups yet"
+                  body="Make a group for a trip, your flat, or the Friday dinner gang. To split something with a friend without a group, tap Add expense."
+                  action={<Button title="Start a group" onPress={() => navigation.navigate('GroupForm', {})} />}
+                />
+              </>
             ) : (
               <>
                 <List>
@@ -151,10 +172,20 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                         }
                         right={<BalanceTag amount={mine} currency={g.baseCurrency} kind="group" />}
                         onPress={() => navigation.navigate('Group', { groupId: g.id })}
-                        last={i === state.groups.length - 1}
+                        last={i === state.groups.length - 1 && outsideCount === 0}
                       />
                     );
                   })}
+                  {outsideCount > 0 ? (
+                    <Row
+                      left={<OutsideBadge />}
+                      title="Outside groups"
+                      subtitle={`${outsideCount} expense${outsideCount === 1 ? '' : 's'} with friends, not in a group`}
+                      right={<TotalsTag totals={Object.fromEntries(outsideNet)} />}
+                      onPress={() => navigation.navigate('Outside')}
+                      last
+                    />
+                  ) : null}
                 </List>
                 <Button
                   title="Start a new group"
@@ -166,6 +197,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
             )
           ) : null}
 
+          {tab === 'friends' && mode === 'cloud' ? <IncomingFriendRequests /> : null}
           {tab === 'friends' ? (
             friends.length === 0 ? (
               <Empty
@@ -255,7 +287,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
           <View style={s.sheetHandle} />
           <Text style={s.sheetTitle}>Add an expense to</Text>
           <ScrollView style={{ maxHeight: 420 }}>
-            {state.groups.map((g, i) => (
+            {state.groups.map((g) => (
               <Row
                 key={g.id}
                 left={<GroupBadge name={g.name} size={36} />}
@@ -265,12 +297,33 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                   setPickGroup(false);
                   navigation.navigate('ExpenseForm', { groupId: g.id });
                 }}
-                last={i === state.groups.length - 1}
               />
             ))}
+            <Row
+              left={<OutsideBadge size={36} />}
+              title="No group"
+              subtitle={friends.length ? 'Pick the friends who shared it' : 'Add a friend first'}
+              onPress={() => {
+                setPickGroup(false);
+                navigation.navigate(friends.length ? 'ExpenseForm' : 'FriendForm', {});
+              }}
+              last
+            />
           </ScrollView>
         </View>
       </Modal>
+    </View>
+  );
+}
+
+/** Badge for expenses outside groups: two moons sharing an orbit, no planet. */
+function OutsideBadge({ size = 40 }: { size?: number }) {
+  const moon = size * 0.22;
+  return (
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ width: size * 0.8, height: size * 0.8, borderRadius: size, borderWidth: 1, borderColor: colors.line }} />
+      <View style={{ position: 'absolute', left: size * 0.1, top: size * 0.5 - moon / 2, width: moon, height: moon, borderRadius: moon, backgroundColor: colors.owed }} />
+      <View style={{ position: 'absolute', right: size * 0.1, top: size * 0.5 - moon / 2, width: moon, height: moon, borderRadius: moon, backgroundColor: colors.star }} />
     </View>
   );
 }

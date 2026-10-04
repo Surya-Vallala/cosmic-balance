@@ -1,7 +1,7 @@
 import React, { useLayoutEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { computePayers, computeSplit, groupCurrencies, toBase } from '../logic';
-import { formatMoney, paiseToInput, parseRupees } from '../money';
+import { computePayers, computeSplit, expensePeople, groupCurrencies, toBase } from '../logic';
+import { CURRENCY_CODES, formatMoney, paiseToInput, parseRupees } from '../money';
 import type { ScreenProps } from '../navigation';
 import { uid, useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
@@ -34,10 +34,21 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
   const { state, dispatch } = useStore();
   const nameOf = useName();
   const meId = state.meId!;
-  const group = state.groups.find((g) => g.id === route.params.groupId);
   const existing = state.expenses.find((e) => e.id === route.params.expenseId);
-  const members = group?.memberIds ?? [];
-  const currencies = group ? groupCurrencies(group) : ['INR'];
+  // In a group, or (no group id) between you and friends you pick.
+  const groupId = existing ? existing.groupId : route.params.groupId ?? null;
+  const group = groupId ? state.groups.find((g) => g.id === groupId) : undefined;
+  const outside = !groupId;
+  const friends = Object.values(state.people)
+    .filter((p) => p.id !== meId && !p.requesting)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const [withIds, setWithIds] = useState<string[]>(() =>
+    existing && outside
+      ? expensePeople(existing).filter((id) => id !== meId)
+      : (route.params.with ?? '').split(',').filter((id) => id && id !== meId && state.people[id]),
+  );
+  const members = group ? group.memberIds : [meId, ...withIds];
+  const currencies = group ? groupCurrencies(group) : CURRENCY_CODES;
 
   const [description, setDescription] = useState(existing?.description ?? '');
   const [cur, setCur] = useState<CurrencyCode>(existing?.currency ?? group?.baseCurrency ?? 'INR');
@@ -71,7 +82,22 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
       ? { [paidBy]: amount }
       : null;
 
-  if (!group) return null;
+  if (groupId && !group) return null;
+
+  /** Outside groups: add or take out a friend (they join or leave the split too). */
+  const toggleFriend = (id: string) => {
+    if (withIds.includes(id)) {
+      setWithIds(withIds.filter((x) => x !== id));
+      setSelected(selected.filter((x) => x !== id));
+      if (paidBy === id) setPaidBy(meId);
+      const { [id]: _gone, ...rest } = inputs;
+      setInputs(rest);
+    } else {
+      setWithIds([...withIds, id]);
+      setSelected([...selected, id]);
+      if (splitType === 'shares') setInputs({ ...inputs, [id]: '1' });
+    }
+  };
 
   const switchType = (t: SplitType) => {
     setSplitType(t);
@@ -92,7 +118,8 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
         ? 'Enter an amount above zero.'
         : null;
 
-  const canSave = !!description.trim() && !!amount && !!result?.ok && !!payers;
+  const withError = touched && outside && withIds.length === 0 ? 'Pick at least one friend who shared this.' : null;
+  const canSave = !!description.trim() && !!amount && !!result?.ok && !!payers && (!outside || withIds.length > 0);
 
   const save = () => {
     setTouched(true);
@@ -101,7 +128,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
       type: 'saveExpense',
       expense: {
         id: existing?.id ?? uid(),
-        groupId: group.id,
+        groupId: group?.id ?? null,
         description: description.trim(),
         currency: cur,
         amount,
@@ -143,12 +170,40 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
         fontSize={40}
       />
       {amountError ? <Text style={ui.error}>{amountError}</Text> : null}
-      {cur !== group.baseCurrency && amount ? (
+      {group && cur !== group.baseCurrency && amount ? (
         <Text style={ui.hint}>
           About {formatMoney(toBase(group, amount, cur), group.baseCurrency)} at {rateText(group, cur)}
         </Text>
-      ) : currencies.length > 1 ? (
+      ) : group && currencies.length > 1 ? (
         <Text style={ui.hint}>Tap the currency to switch between {currencies.join(' and ')}.</Text>
+      ) : outside ? (
+        <Text style={ui.hint}>Not in a group. Tap the currency to change it.</Text>
+      ) : null}
+
+      {outside ? (
+        <>
+          <Text style={[ui.label, { marginTop: space.xl }]}>With</Text>
+          {friends.length === 0 ? (
+            <Text style={[ui.hint, { marginTop: 0 }]}>Add a friend first, under Friends on the home screen.</Text>
+          ) : (
+            <View style={s.chips}>
+              {friends.map((f) => (
+                <Chip
+                  key={f.id}
+                  label={f.name}
+                  selected={withIds.includes(f.id)}
+                  onPress={() => toggleFriend(f.id)}
+                  leading={<Avatar name={f.name} size={20} />}
+                />
+              ))}
+            </View>
+          )}
+          {withError ? (
+            <Text style={ui.error}>{withError}</Text>
+          ) : (
+            <Text style={[ui.hint, { marginTop: 0 }]}>Pick everyone who shared it. You’re always in it.</Text>
+          )}
+        </>
       ) : null}
 
       <Text style={[ui.label, { marginTop: space.xl }]}>Paid by</Text>

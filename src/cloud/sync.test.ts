@@ -207,3 +207,33 @@ describe('notifications and join requests', () => {
     ]);
   });
 });
+
+describe('expenses outside groups and friend requests', () => {
+  const ASKER = '66666666-6666-4666-8666-666666666666';
+  const out: Expense = { ...expense, id: 'n1', groupId: null, currency: 'INR' };
+  const withOutside: Rows = {
+    ...rows,
+    people: [
+      ...rows.people,
+      { id: ASKER, user_id: 'u-asker', name: 'Asha', upi_id: null, email: 'asha@gmail.com', created_by: 'u-asker', created_at: '2026-10-02T09:00:00Z' },
+    ],
+    expenses: [...rows.expenses, { id: 'n1', group_id: null, data: out, created_by: U_ME, created_at: '2026-10-03T10:00:00Z' }],
+    friend_requests: [{ id: 'f1', from_person: ASKER, to_user: U_ME, created_at: '2026-10-03T10:00:00Z' }],
+  };
+  const s = rowsToState(withOutside, ME);
+
+  it('keeps an expense without a group', () => {
+    expect(s.expenses.find((e) => e.id === 'n1')?.groupId).toBeNull();
+  });
+  it('describes it in the activity as with whom, not in a group', () => {
+    expect(s.activity.find((a) => a.id === 'e-n1')?.text).toBe('You added “Hostel” (₹6,000) with Ravi');
+  });
+  it('keeps friend requests, and the person asking out of friends lists', () => {
+    expect(s.friendRequests).toEqual([{ id: 'f1', fromPerson: ASKER, toUser: U_ME, createdAt: '2026-10-03T10:00:00Z' }]);
+    expect(s.people[ASKER].requesting).toBe(true);
+  });
+  it('saves it with no group', () => {
+    const ops = actionToOps({ type: 'saveExpense', expense: out } as never, s);
+    expect(ops).toEqual([{ table: 'expenses', kind: 'upsert', values: expect.objectContaining({ id: 'n1', group_id: null }) }]);
+  });
+});

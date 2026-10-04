@@ -690,6 +690,130 @@ as_user('stranger', 'select public.remove_friend(%s)', (me_nina,), fetch=False)
 check(superuser('select count(*) from public.people')[0][0] == before and 'Surya' in names('nina'),
       'removing someone you cannot see does nothing')
 
+# --- Expenses outside groups -------------------------------------------------------
+for n in ['oa', 'ob', 'oc', 'od']:
+    sign_up(n)
+me_oa = one('oa', 'select id from public.ensure_me(%s)', ('Oa',))
+me_ob = one('ob', 'select id from public.ensure_me(%s)', ('Ob',))
+me_oc = one('oc', 'select id from public.ensure_me(%s)', ('Oc',))
+me_od = one('od', 'select id from public.ensure_me(%s)', ('Od',))
+one('oa', 'select id from public.add_person_by_email(%s)', ('ob@gmail.com',))
+one('oa', 'select id from public.add_person_by_email(%s)', ('oc@gmail.com',))
+superuser('delete from public.notifications')
+
+
+def outside(payer, people, amount=900):
+    each = amount // len(people)
+    return json.dumps({'description': 'Lunch', 'currency': 'INR', 'amount': amount, 'payers': {payer: amount},
+                       'participants': people, 'shares': {p: each for p in people}})
+
+
+ne = str(uuid.uuid4())
+as_user('oa', 'insert into public.expenses (id, group_id, data) values (%s, null, %s)', (ne, outside(me_oa, [me_oa, me_ob, me_oc])), fetch=False)
+check(one('ob', 'select count(*) from public.expenses where id = %s', (ne,)) == 1, 'an expense outside groups is seen by the friends in it')
+check(one('od', 'select count(*) from public.expenses where id = %s', (ne,)) == 0, 'and by nobody else')
+check(notes('ob') == ['Oa added an expense with you'] and notes('oc') == ['Oa added an expense with you'],
+      'the friends in it are notified, without the amount')
+check('Oc' in names('ob'), 'people in the same expense can see each other’s names')
+check(fails('oa', 'insert into public.expenses (id, group_id, data) values (%s, null, %s)',
+            (str(uuid.uuid4()), outside(me_ob, [me_ob, me_oc]))), 'you cannot record an expense outside groups that you are not in')
+check(fails('oa', 'insert into public.expenses (id, group_id, data) values (%s, null, %s)',
+            (str(uuid.uuid4()), outside(me_oa, [me_oa]))), 'nor one with nobody else in it')
+check(fails('oa', 'insert into public.expenses (id, group_id, data) values (%s, null, %s)',
+            (str(uuid.uuid4()), outside(me_oa, [me_oa, me_od]))), 'nor include someone you don’t know')
+as_user('ob', 'update public.expenses set data = %s where id = %s', (outside(me_ob, [me_oa, me_ob, me_oc]), ne), fetch=False)
+check(one('oa', "select data->'payers' ? %s from public.expenses where id = %s", (me_ob, ne)), 'a friend in it can edit it')
+superuser('delete from public.notifications')
+as_user('ob', 'update public.expenses set data = %s where id = %s', (outside(me_ob, [me_ob, me_oc]), ne), fetch=False)
+check(notes('oa') == ['Ob edited an expense with you'], 'someone taken out of it by an edit is told')
+as_user('ob', 'update public.expenses set data = %s where id = %s', (outside(me_ob, [me_oa, me_ob, me_oc]), ne), fetch=False)
+as_user('od', 'delete from public.expenses where id = %s', (ne,), fetch=False)
+check(one('oa', 'select count(*) from public.expenses where id = %s', (ne,)) == 1, 'outsiders cannot delete it')
+err = error('oa', 'select public.remove_friend(%s)', (me_ob,))
+check(err and 'outside groups' in err, 'a friend in an expense outside groups with you cannot be removed until it is deleted')
+as_user('oc', 'delete from public.expenses where id = %s', (ne,), fetch=False)
+check(one('oa', 'select count(*) from public.expenses where id = %s', (ne,)) == 0, 'anyone in it can delete it')
+
+# Linking a name to an account can't expose someone's private expense outside groups.
+for n in ['pb', 'pa', 'palt']:
+    sign_up(n)
+me_pb = one('pb', 'select id from public.ensure_me(%s)', ('Pb',))
+me_pa = one('pa', 'select id from public.ensure_me(%s)', ('Pa',))
+one('palt', 'select id from public.ensure_me(%s)', ('Palt',))
+one('pb', 'select id from public.add_person_by_email(%s)', ('pa@gmail.com',))
+rv = str(uuid.uuid4())
+as_user('pb', 'insert into public.people (id, name) values (%s, %s)', (rv, 'Rv'), fetch=False)
+gshared = str(uuid.uuid4())
+as_user('pb', 'insert into public.groups (id, name, member_ids) values (%s, %s, %s::uuid[])', (gshared, 'Shared', [me_pb, me_pa, rv]), fetch=False)
+as_user('pb', 'insert into public.expenses (id, group_id, data) values (%s, null, %s)', (str(uuid.uuid4()), outside(me_pb, [me_pb, rv])), fetch=False)
+err = error('pa', 'select public.set_person_email(%s, %s)', (rv, 'palt@gmail.com'))
+check(err and 'only whoever added Rv' in err, 'a name with a private expense outside groups can’t be linked by someone not in it')
+check(as_user('pa', 'select code from public.person_invite_codes(%s::uuid[])', ([rv],)) == [], 'nor invited by them')
+check(len(as_user('pb', 'select code from public.person_invite_codes(%s::uuid[])', ([rv],))) == 1, 'whoever added them (and is in it) still can')
+big = json.dumps({'payers': {me_pb: 100}, 'participants': [me_pb, me_pa] + ['x' * 40] * 600, 'shares': {me_pb: 50, me_pa: 50}})
+check(fails('pb', 'insert into public.expenses (id, group_id, data) values (%s, null, %s)', (str(uuid.uuid4()), big)),
+      'an oversized expense is refused')
+e_in = str(uuid.uuid4())
+as_user('pb', 'insert into public.expenses (id, group_id, data) values (%s, %s, %s)', (e_in, gshared, outside(me_pb, [me_pb, me_pa])), fetch=False)
+err = error('pb', 'update public.expenses set group_id = null where id = %s', (e_in,))
+check(err and 'moved' in err, 'an expense can’t be moved out of its group (or into one)')
+# Merging two people who are in the same expense would break it: refused.
+mm = str(uuid.uuid4())
+as_user('pb', 'insert into public.people (id, name) values (%s, %s)', (mm, 'Mm'), fetch=False)
+as_user('pb', 'insert into public.expenses (id, group_id, data) values (%s, null, %s)', (str(uuid.uuid4()), outside(me_pb, [me_pb, me_pa, mm])), fetch=False)
+err = error('pb', 'select public.set_person_email(%s, %s)', (mm, 'pa@gmail.com'))
+check(err and 'same expense' not in (err or '') and 'expense with this person' in err,
+      'a name can’t be linked to someone already in the same expense')
+
+# --- Friend links: they ask, you accept ------------------------------------------------
+code_a = one('oa', 'select public.my_friend_code()')
+check(len(code_a) == 12 and one('oa', 'select public.my_friend_code()') == code_a, 'your friend link stays the same until you reset it')
+check(fails_anon('select public.friend_link_preview(%s)', (code_a,)), 'signed-out visitors cannot look it up')
+prev = one('od', 'select public.friend_link_preview(%s)', (code_a,))
+check(prev['name'] == 'Oa' and not prev['mine'] and not prev['friends'] and not prev['requested'], 'opening it shows whose link it is')
+check(one('oa', 'select public.friend_link_preview(%s)', (code_a,))['mine'], 'and tells you if it is your own')
+err = error('oa', 'select public.request_friend(%s)', (code_a,))
+check(err and 'your own' in err, 'you cannot send yourself a friend request')
+superuser('delete from public.notifications')
+check(one('od', 'select public.request_friend(%s)', (code_a,))['status'] == 'requested', 'accepting the link sends a request')
+check('Oa' not in names('od') and 'Od' not in [r[0] for r in as_user('oa', 'select p.name from public.people p join public.contacts c on c.person_id = p.id')],
+      'but you are not friends until it is accepted')
+check(notes('oa') == ['Od wants to be friends on Cosmic Balance'], 'the link’s owner is notified')
+req = one('oa', 'select id from public.friend_requests')
+check(req is not None and 'Od' in names('oa'), 'and sees the request and who sent it')
+check(fails('od', 'select public.approve_friend_request(%s)', (req,)), 'nobody can accept their own request')
+check(one('ob', 'select count(*) from public.friend_requests') == 0, 'others cannot see the request')
+one('od', 'select public.request_friend(%s)', (code_a,))
+check(len(notes('oa')) == 1 and one('oa', 'select count(*) from public.friend_requests') == 1, 'asking again changes nothing')
+check(one('oa', 'select public.approve_friend_request(%s)', (req,)) == me_od, 'the owner accepts it')
+check('Oa' in names('od') and 'Od' in names('oa'), 'and they are friends on both sides')
+check(notes('od')[-1] == 'Oa accepted your friend request', 'the sender is told')
+check(one('od', 'select public.request_friend(%s)', (code_a,))['status'] == 'friends' and
+      one('od', 'select public.friend_link_preview(%s)', (code_a,))['friends'], 'opening the link again just says you are friends')
+check(one('oc', 'select public.request_friend(%s)', (code_a,))['status'] == 'friends',
+      'someone the owner already added (by Gmail) is simply friends, no request needed')
+sign_up('oe')
+one('oe', 'select id from public.ensure_me(%s)', ('Oe',))
+one('oe', 'select public.request_friend(%s)', (code_a,))
+creq = one('oa', 'select id from public.friend_requests')
+as_user('oa', 'select public.decline_friend_request(%s)', (creq,))
+check(one('oa', 'select count(*) from public.friend_requests') == 0, 'a request can be declined')
+superuser("delete from public.notifications where kind <> 'friend_request'")
+one('oe', 'select public.request_friend(%s)', (code_a,))
+check(one('oa', "select count(*) from public.notifications where kind = 'friend_request' and actor = %s", (U['oe'],)) == 1, 'asking again right after a decline does not notify again (once a day at most)')
+sign_up('of')
+one('of', 'select id from public.ensure_me(%s)', ('Of',))
+one('of', 'select public.request_friend(%s)', (code_a,))
+of_id = one('oa', "select f.from_person from public.friend_requests f join public.people p on p.id = f.from_person where p.name = 'Of'")
+as_user('oa', 'select public.remove_friend(%s)', (of_id,), fetch=False)
+check(one('oa', 'select count(*) from public.friend_requests where from_person = %s', (of_id,)) == 0 and 'Of' not in names('oa'),
+      'removing someone with a request pending clears the request too')
+new_code = one('oa', 'select public.reset_friend_code()')
+check(new_code != code_a and one('ob', 'select public.friend_link_preview(%s)', (code_a,)) is None and
+      fails('ob', 'select public.request_friend(%s)', (code_a,)), 'making a new link retires the old one')
+check(fails('od', 'select * from public.friend_links') and fails('od', 'insert into public.friend_requests (from_person, to_user) values (%s, %s)', (me_od, U['ob'])),
+      'friend links and requests cannot be read or written directly')
+
 # --- Group deletion by creator cascades ----------------------------------------------
 as_user('surya', 'delete from public.groups where id = %s', (g,), fetch=False)
 check(len(as_user('surya', 'select * from public.expenses')) == 0, 'deleting a group removes its expenses')

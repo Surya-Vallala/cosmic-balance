@@ -5,7 +5,6 @@ import { approveJoinRequest, declineJoinRequest } from '../cloud/api';
 import { inviteLink } from '../cloud/config';
 import { shareNote, ShareLink, useInviteLinks } from '../invites';
 import { groupLinkMessage } from '../messages';
-import { Supernova } from '../cosmos';
 import { shortDate } from '../dates';
 import { groupCurrencies, groupDebts, groupNet, groupSummary } from '../logic';
 import { formatMoney } from '../money';
@@ -143,7 +142,7 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
         ) : null}
         <Row
           title="Group summary"
-          subtitle="Total spending, and what each person paid, used and owes"
+          subtitle={debts.length ? 'Who pays whom, and what each person paid and owes' : 'Total spending, and what each person paid and owes'}
           right={<Text style={s.chevron}>›</Text>}
           onPress={() => navigation.navigate('GroupSummary', { groupId: group.id })}
           last
@@ -245,52 +244,6 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
               'Each friend gets their own link: no approval needed. When they open it and sign in with Google, everything recorded for them becomes theirs.'}
           </Text>
         </>
-      ) : null}
-
-      {debts.length > 0 ? (
-        <>
-          <SectionTitle>Who pays whom</SectionTitle>
-          <List>
-            {debts.map((d, i) => {
-              const involvesMe = d.from === meId || d.to === meId;
-              const text =
-                d.from === meId
-                  ? `You pay ${nameOf(d.to)}`
-                  : d.to === meId
-                    ? `${nameOf(d.from)} pays you`
-                    : `${nameOf(d.from)} pays ${nameOf(d.to)}`;
-              const tone = d.from === meId ? colors.owe : d.to === meId ? colors.owed : colors.textSoft;
-              return (
-                <View key={`${d.from}-${d.to}`} style={[s.debtRow, i < debts.length - 1 && s.divider]}>
-                  <Avatar name={state.people[d.from]?.name ?? '?'} size={32} />
-                  <View style={{ flex: 1, marginLeft: space.md }}>
-                    <Text style={s.debtText}>{text}</Text>
-                    <Text style={[s.debtAmount, { color: tone }]}>{formatMoney(d.amount, base)}</Text>
-                    {multi ? <Text style={s.debtEquiv}>or {equivalents(group, d.amount)}</Text> : null}
-                  </View>
-                  <Button
-                    small
-                    title="Settle"
-                    variant={involvesMe ? 'primary' : 'secondary'}
-                    onPress={() =>
-                      navigation.navigate('SettleUp', { groupId: group.id, from: d.from, to: d.to, amount: d.amount })
-                    }
-                  />
-                </View>
-              );
-            })}
-          </List>
-          {group.simplifyDebts ? (
-            <Text style={s.note}>Debts are simplified so the group needs the fewest payments.</Text>
-          ) : null}
-        </>
-      ) : null}
-
-      {debts.length === 0 && expenses.length > 0 ? (
-        <View style={s.settled}>
-          <Supernova size={72} />
-          <Text style={s.settledText}>Everyone in this group is settled up.</Text>
-        </View>
       ) : null}
 
       <SectionTitle>Expenses and payments</SectionTitle>
