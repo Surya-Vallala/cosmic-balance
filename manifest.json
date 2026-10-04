@@ -1,7 +1,7 @@
 {
-  "name": "Cosmic Khaata",
-  "short_name": "Cosmic Khaata",
-  "description": "Split bills with friends and keep the khaata balanced. By Tesseract Studio.",
+  "name": "Cosmic Balance",
+  "short_name": "Cosmic Balance",
+  "description": "Split bills with friends and keep everything in balance. By Tesseract Studio.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
