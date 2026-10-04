@@ -16,8 +16,8 @@ self.addEventListener('push', (event) => {
   }
   const shown = self.registration.showNotification(data.title || 'Cosmic Balance', {
     body: data.body || 'Something new in Cosmic Balance',
-    icon: here('icon-v2-192.png'),
-    badge: here('badge-v2-96.png'),
+    icon: here('icon-192.png'),
+    badge: here('badge-96.png'),
     tag: data.tag,
     data: { url: here(data.url || '') },
   });
