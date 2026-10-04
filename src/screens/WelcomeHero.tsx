@@ -12,7 +12,7 @@ export function WelcomeHero() {
     <View style={[s.hero, { paddingTop: insets.top + space.xxl * 1.5 }]}>
       <Starfield count={40} seed={11} />
       <Libra width={170} opacity={0.8} style={{ position: 'absolute', right: space.lg, top: insets.top + space.xxl * 2.4 }} />
-      <OrbitMark size={40} />
+      <OrbitMark size={56} />
       <Text style={s.wordmark}>{'cosmic\nbalance'}</Text>
       <Text style={s.lede}>Share costs with friends anywhere on the planet, and keep everything in balance.</Text>
       <View style={s.ledger}>
