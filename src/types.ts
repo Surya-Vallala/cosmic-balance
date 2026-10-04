@@ -49,7 +49,8 @@ export type SplitType = 'equal' | 'exact' | 'percent' | 'shares';
 
 export interface Expense {
   id: Id;
-  groupId: Id;
+  /** The group it's in, or null for an expense between friends outside any group. */
+  groupId: Id | null;
   description: string;
   /** Currency the bill was paid in. Every amount below is in this currency. */
   currency: CurrencyCode;

@@ -27,7 +27,8 @@ export interface GroupRow {
 }
 export interface ExpenseRow {
   id: string;
-  group_id: string;
+  /** Null for an expense between friends outside groups. */
+  group_id: string | null;
   data: Expense;
   created_by: string | null;
   created_at: string;
@@ -186,17 +187,26 @@ export function deriveActivity(rows: Rows, s: AppState): Activity[] {
   };
   const name = (id: Id, object = false) => (id === me ? (object ? 'you' : 'You') : s.people[id]?.name ?? 'Someone');
   const groupName = (id: Id) => rows.groups.find((g) => g.id === id)?.name ?? 'a group';
+  // "with you and Priya" for an expense outside groups (leaving out whoever added it).
+  const withWhom = (e: Expense, by: string | null) => {
+    const adder = by ? byUser.get(by)?.id : undefined;
+    const ids = [...new Set([...Object.keys(e.payers ?? {}), ...Object.keys(e.shares ?? {})])].filter((id) => id !== adder);
+    const names = ids.sort((a, b) => (a === me ? -1 : b === me ? 1 : 0)).map((id) => name(id, true));
+    if (names.length === 0) return 'outside groups';
+    return `with ${names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`}`;
+  };
 
   const out: Activity[] = [];
   for (const g of rows.groups) {
     out.push({ id: `g-${g.id}`, at: g.created_at, groupId: g.id, text: `${actor(g.created_by)} created ${g.name}` });
   }
   for (const e of rows.expenses) {
+    const where = e.group_id ? `in ${groupName(e.group_id)}` : withWhom(e.data, e.created_by);
     out.push({
       id: `e-${e.id}`,
       at: e.created_at,
-      groupId: e.group_id,
-      text: `${actor(e.created_by)} added “${e.data.description}” (${formatMoney(e.data.amount, e.data.currency)}) in ${groupName(e.group_id)}`,
+      groupId: e.group_id ?? undefined,
+      text: `${actor(e.created_by)} added “${e.data.description}” (${formatMoney(e.data.amount, e.data.currency)}) ${where}`,
     });
   }
   for (const p of rows.payments) {

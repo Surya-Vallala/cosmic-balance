@@ -300,23 +300,41 @@ export function pairBalanceInGroup(
   return amount;
 }
 
+/** Expenses between friends outside any group. */
+export function nonGroupExpenses(expenses: Expense[]): Expense[] {
+  return expenses.filter((e) => !e.groupId);
+}
+
+/** Everyone in an expense: who paid and who shares it. */
+export function expensePeople(e: Expense): Id[] {
+  return [...new Set([...Object.keys(e.payers ?? {}), ...Object.keys(e.shares ?? {}), ...(e.participants ?? [])])];
+}
+
 /**
  * My balance with each friend outside groups (positive = they owe me), per
- * currency. It counts transfers and overall settle-ups between us. An overall
- * settle-up also wrote balancing payments into groups; those were not real
- * money, so they are reversed here to keep the overall total right.
+ * currency. It counts expenses outside groups (in the currency each was paid
+ * in), transfers and overall settle-ups between us. An overall settle-up also
+ * wrote balancing payments into groups; those were not real money, so they
+ * are reversed here to keep the overall total right.
  */
 export function outsideBalances(
   meId: Id,
   groups: Group[],
   payments: Payment[],
   transfers: Transfer[],
+  expenses: Expense[] = [],
 ): Record<Id, Totals> {
   const out: Record<Id, Totals> = {};
   const add = (friend: Id, cur: CurrencyCode, v: number) => {
     out[friend] = out[friend] ?? {};
     out[friend][cur] = (out[friend][cur] ?? 0) + v;
   };
+  for (const e of nonGroupExpenses(expenses)) {
+    for (const d of expenseOwes(e)) {
+      if (d.to === meId && d.from !== meId) add(d.from, e.currency, d.amount);
+      if (d.from === meId && d.to !== meId) add(d.to, e.currency, -d.amount);
+    }
+  }
   for (const t of transfers) {
     if (t.from === meId && t.to !== meId) add(t.to, t.currency, t.amount);
     if (t.to === meId && t.from !== meId) add(t.from, t.currency, -t.amount);
@@ -354,7 +372,7 @@ export function friendBalances(
       if (d.from === meId) add(d.to, g.baseCurrency, -d.amount);
     }
   }
-  for (const [friend, t] of Object.entries(outsideBalances(meId, groups, payments, transfers))) {
+  for (const [friend, t] of Object.entries(outsideBalances(meId, groups, payments, transfers, expenses))) {
     for (const [c, v] of Object.entries(t)) add(friend, c, v);
   }
   return out;
@@ -407,7 +425,7 @@ export function planOverallSettlement(
   const before = inCurrency
     .map((group) => ({ group, amount: pairBalanceInGroup(meId, friendId, group, expenses, payments) }))
     .filter((x) => x.amount !== 0);
-  const outside = outsideBalances(meId, groups, payments, transfers)[friendId]?.[currency] ?? 0;
+  const outside = outsideBalances(meId, groups, payments, transfers, expenses)[friendId]?.[currency] ?? 0;
 
   // Work out the balancing payments group by group. Simplified groups can
   // re-route a debt after a payment, so repeat until the pair is clear.
@@ -548,6 +566,12 @@ export function canRemoveFriend(s: AppState, friendId: Id, myUserId: string | nu
   const balance = nonZero(friendBalances(me, s.groups, s.expenses, s.payments, s.transfers)[friendId] ?? {});
   if (balance.length > 0) {
     return { ok: false, reason: `You and ${name} aren’t settled up yet. Settle up first, then you can remove ${name}.` };
+  }
+  if (nonGroupExpenses(s.expenses).some((e) => expensePeople(e).includes(friendId))) {
+    return {
+      ok: false,
+      reason: `${name} is in expenses outside groups. Delete those expenses first, then you can remove ${name}.`,
+    };
   }
   const groups = s.groups.filter((g) => g.memberIds.includes(friendId));
   for (const g of groups) {

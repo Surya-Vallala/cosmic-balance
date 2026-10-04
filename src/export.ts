@@ -10,7 +10,7 @@ function cell(v: string | number | undefined): string {
 
 export function buildCsv(state: AppState): string {
   const name = (id: Id) => (id === state.meId ? `${state.people[id]?.name ?? 'Me'} (me)` : state.people[id]?.name ?? 'Unknown');
-  const groupName = (id: Id) => state.groups.find((g) => g.id === id)?.name ?? '';
+  const groupName = (id: Id | null) => (id ? state.groups.find((g) => g.id === id)?.name ?? '' : '(no group)');
   const list = (rec: Record<Id, number>) =>
     Object.entries(rec)
       .map(([id, v]) => `${name(id)}: ${paiseToInput(v)}`)

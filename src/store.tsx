@@ -14,6 +14,7 @@ import {
   subscribe,
 } from './cloud/api';
 import { actionToOps, personFromRow, rowsToState, type Op } from './cloud/sync';
+import { expensePeople } from './logic';
 import { formatMoney } from './money';
 import { refreshPushSubscription, setBadge } from './push';
 import type { Activity, AppState, Expense, Group, Id, Payment, Person, Transfer } from './types';
@@ -66,6 +67,15 @@ export type Action =
 function nameOf(s: AppState, id: Id) {
   if (id === s.meId) return 'You';
   return s.people[id]?.name ?? 'Someone';
+}
+
+/** "with Ravi and Priya" for an expense outside groups. */
+function withWhom(s: AppState, e: Expense): string {
+  const others = expensePeople(e)
+    .filter((id) => id !== s.meId)
+    .map((id) => s.people[id]?.name ?? 'Someone');
+  if (others.length === 0) return 'outside groups';
+  return `with ${others.length === 1 ? others[0] : `${others.slice(0, -1).join(', ')} and ${others[others.length - 1]}`}`;
 }
 
 function log(s: AppState, text: string, groupId?: Id): Activity[] {
@@ -122,8 +132,8 @@ function reducer(s: AppState, a: Action): AppState {
         expenses,
         activity: log(
           s,
-          `You ${verb} “${e.description}” (${formatMoney(e.amount, e.currency)}) in ${g?.name ?? 'a group'}`,
-          e.groupId,
+          `You ${verb} “${e.description}” (${formatMoney(e.amount, e.currency)}) ${e.groupId ? `in ${g?.name ?? 'a group'}` : withWhom(s, e)}`,
+          e.groupId ?? undefined,
         ),
       };
     }
@@ -134,7 +144,11 @@ function reducer(s: AppState, a: Action): AppState {
       return {
         ...s,
         expenses: s.expenses.filter((x) => x.id !== a.id),
-        activity: log(s, `You deleted “${e.description}” from ${g?.name ?? 'a group'}`, e.groupId),
+        activity: log(
+          s,
+          `You deleted “${e.description}” ${e.groupId ? `from ${g?.name ?? 'a group'}` : withWhom(s, e)}`,
+          e.groupId ?? undefined,
+        ),
       };
     }
     case 'addPayment': {
@@ -289,7 +303,7 @@ function migrate(saved: AppState): AppState {
       const { paidBy, ...rest } = legacy;
       return {
         ...rest,
-        currency: legacy.currency ?? baseOf(e.groupId),
+        currency: legacy.currency ?? (e.groupId ? baseOf(e.groupId) : 'INR'),
         payers: legacy.payers ?? (paidBy ? { [paidBy]: legacy.amount } : {}),
       };
     }),
@@ -800,7 +814,7 @@ function sampleData(s: AppState): AppState {
     ...expenses.map((e) => ({
       id: uid(),
       at: e.date,
-      groupId: e.groupId,
+      groupId: e.groupId ?? undefined,
       text: `${who(firstPayer(e))} added “${e.description}” (${formatMoney(e.amount, e.currency)})`,
     })),
   ].sort((a, b) => (a.at < b.at ? 1 : -1));
