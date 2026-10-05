@@ -1,12 +1,26 @@
 import React, { useLayoutEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { relativeDay } from '../dates';
+import { fromDay, relativeDay, toDay } from '../dates';
 import { CURRENCY_CODES, formatMoney, paiseToInput, parseRupees } from '../money';
 import type { ScreenProps } from '../navigation';
 import { uid, useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { CurrencyCode } from '../types';
-import { AmountInput, Avatar, Button, Chip, ConfirmButton, CurrencyPicker, Empty, Field, List, Row, Screen, styles as ui } from '../ui';
+import {
+  AmountInput,
+  Avatar,
+  Button,
+  Chip,
+  ConfirmButton,
+  CurrencyPicker,
+  DateField,
+  Empty,
+  Field,
+  List,
+  Row,
+  Screen,
+  styles as ui,
+} from '../ui';
 
 export default function TransferScreen({ navigation, route }: ScreenProps<'Transfer'>) {
   const { state, dispatch } = useStore();
@@ -28,6 +42,8 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
   const [pick, setPick] = useState(false);
   const [amountText, setAmountText] = useState(existing ? paiseToInput(existing.amount) : '');
   const [note, setNote] = useState(existing?.note ?? '');
+  // The day the money was given: today unless changed.
+  const [day, setDay] = useState(() => toDay(existing?.date ?? new Date()));
   const [touched, setTouched] = useState(false);
 
   useLayoutEffect(() => {
@@ -107,7 +123,7 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
         currency: cur,
         amount,
         note: note.trim() || undefined,
-        date: existing?.date ?? new Date().toISOString(),
+        date: fromDay(day, existing?.date),
         createdAt: existing?.createdAt ?? new Date().toISOString(),
       },
     });
@@ -153,6 +169,10 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
         fontSize={36}
       />
       {touched && !amount ? <Text style={ui.error}>Enter how much was given.</Text> : null}
+
+      <View style={{ marginTop: space.lg }}>
+        <DateField label="Date" value={day} onChange={setDay} />
+      </View>
 
       <View style={{ marginTop: space.xl }}>
         <Field
