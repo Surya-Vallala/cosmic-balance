@@ -61,7 +61,9 @@ export function Screen({
       <ScrollView
         contentContainerStyle={[{ padding: space.lg, paddingBottom: space.xxl + insets.bottom }, contentStyle]}
         keyboardShouldPersistTaps="handled"
-        keyboardDismissMode="on-drag"
+        // On the web app any scroll (even the browser keeping the cursor in
+        // view while you type) would close the keyboard, so only on native.
+        keyboardDismissMode={Platform.OS === 'web' ? 'none' : 'on-drag'}
       >
         {children}
       </ScrollView>
@@ -341,7 +343,6 @@ export function Field({ label, hint, error, style, ...props }: TextInputProps & 
   );
 }
 
-/** Small right-aligned number input used in lists. */
 /**
  * A day, shown as "Today" or "Fri, 2 Oct". Tapping it opens the phone's own
  * calendar (on the web app); elsewhere, arrows step a day at a time.
@@ -420,6 +421,7 @@ export function DateField({
   );
 }
 
+/** Small right-aligned number input used in lists. */
 export function SmallInput(props: TextInputProps) {
   const [focused, setFocused] = useState(false);
   return (
@@ -624,11 +626,14 @@ export function Row({
   onPress,
   last,
   titleLines = 1,
+  note,
 }: {
   titleLines?: number;
   left?: React.ReactNode;
   title: string;
   subtitle?: string;
+  /** An extra line under the subtitle, like an expense's remarks. */
+  note?: string;
   right?: React.ReactNode;
   onPress?: () => void;
   last?: boolean;
@@ -643,6 +648,11 @@ export function Row({
         {subtitle ? (
           <Text style={styles.rowSubtitle} numberOfLines={2}>
             {subtitle}
+          </Text>
+        ) : null}
+        {note ? (
+          <Text style={styles.rowNote} numberOfLines={1}>
+            {note.replace(/\s+/g, ' ').trim()}
           </Text>
         ) : null}
       </View>
@@ -867,6 +877,7 @@ export const styles = StyleSheet.create({
   rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
   rowTitle: { fontSize: 16, color: colors.text, fontWeight: '600' },
   rowSubtitle: { fontSize: 13, color: colors.muted, marginTop: 2 },
+  rowNote: { fontSize: 13, color: colors.textSoft, fontStyle: 'italic', marginTop: 2 },
   sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',

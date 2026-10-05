@@ -50,7 +50,8 @@ export function stateFromPath(path: string): LinkState {
   url.searchParams.forEach((v, k) => {
     if (k !== 's') params[k] = NUMBERS.has(k) ? Number(v) : v;
   });
-  return { routes: [{ name: 'Home' }, { name, params: Object.keys(params).length ? params : undefined }] };
+  // Always an object, even when empty: screens read route.params.something.
+  return { routes: [{ name: 'Home' }, { name, params }] };
 }
 
 /** The address for the screen on top of the stack. */

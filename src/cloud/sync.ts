@@ -109,6 +109,9 @@ export function rowsToState(rows: Rows, meId: Id): AppState {
     id: r.id,
     groupId: r.group_id,
     currency: r.data.currency ?? 'INR',
+    // Text a friend typed: only ever shown as text.
+    description: typeof r.data.description === 'string' ? r.data.description : '',
+    note: typeof r.data.note === 'string' && r.data.note.trim() ? r.data.note : undefined,
     date: r.data.date ?? r.created_at,
     createdAt: r.data.createdAt ?? r.created_at,
   }));

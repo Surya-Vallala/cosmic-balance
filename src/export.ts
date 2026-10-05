@@ -20,7 +20,7 @@ export function buildCsv(state: AppState): string {
     ['Date', 'Type', 'Group', 'Description', 'Currency', 'Amount', 'Paid by', 'Split between', 'From', 'To', 'Note'],
   ];
   for (const e of state.expenses) {
-    rows.push([e.date.slice(0, 10), 'Expense', groupName(e.groupId), e.description, e.currency, paiseToInput(e.amount), list(e.payers), list(e.shares), '', '', '']);
+    rows.push([e.date.slice(0, 10), 'Expense', groupName(e.groupId), e.description, e.currency, paiseToInput(e.amount), list(e.payers), list(e.shares), '', '', e.note]);
   }
   for (const p of state.payments) {
     rows.push([

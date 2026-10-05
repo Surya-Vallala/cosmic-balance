@@ -29,6 +29,8 @@ describe('screen addresses (Back button)', () => {
   });
   it('screens without params', () => {
     expect(pathFromState(base, { routes: [{ name: 'Home' }, { name: 'Notifications' }] })).toBe('/cosmic-balance/?s=Notifications');
-    expect(stateFromPath('/cosmic-balance/?s=Notifications')).toEqual({ routes: [{ name: 'Home' }, { name: 'Notifications', params: undefined }] });
+    expect(stateFromPath('/cosmic-balance/?s=Notifications')).toEqual({ routes: [{ name: 'Home' }, { name: 'Notifications', params: {} }] });
+    // A form opened with no params still reloads (it reads route.params.expenseId).
+    expect(stateFromPath('/cosmic-balance/?s=ExpenseForm')).toEqual({ routes: [{ name: 'Home' }, { name: 'ExpenseForm', params: {} }] });
   });
 });

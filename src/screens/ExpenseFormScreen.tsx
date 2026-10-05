@@ -25,6 +25,9 @@ import {
   symbolPrefix,
 } from '../ui';
 
+/** Longest remark allowed (characters). */
+export const REMARKS_MAX = 500;
+
 const splitHelp: Record<SplitType, string> = {
   equal: 'Tick who shared this. The amount is divided equally between them.',
   exact: 'Type exactly how much each person owes. It must add up to the total.',
@@ -33,7 +36,7 @@ const splitHelp: Record<SplitType, string> = {
 };
 
 export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'ExpenseForm'>) {
-  const { state, dispatch } = useStore();
+  const { state, dispatch, mode } = useStore();
   const nameOf = useName();
   const meId = state.meId!;
   const existing = state.expenses.find((e) => e.id === route.params.expenseId);
@@ -67,6 +70,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
   const [splitType, setSplitType] = useState<SplitType>(existing?.splitType ?? 'equal');
   const [selected, setSelected] = useState<string[]>(existing?.splitType === 'equal' ? existing.participants : members);
   const [inputs, setInputs] = useState<Record<string, string>>(existing?.splitType !== 'equal' ? existing?.inputs ?? {} : {});
+  const [remarks, setRemarks] = useState(existing?.note ?? '');
   const [touched, setTouched] = useState(false);
 
   useLayoutEffect(() => {
@@ -141,6 +145,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
         participants: Object.keys(result.shares),
         inputs: splitType === 'equal' ? {} : inputs,
         shares: result.shares,
+        note: remarks.trim() || undefined,
         date: fromDay(day, existing?.date),
         createdAt: existing?.createdAt ?? new Date().toISOString(),
       },
@@ -332,8 +337,30 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
         ) : null
       ) : null}
 
+      <View style={{ marginTop: space.xl }}>
+        <Field
+          label="Remarks (optional)"
+          value={remarks}
+          onChangeText={setRemarks}
+          placeholder="Anything to explain this expense…"
+          autoCapitalize="sentences"
+          multiline
+          maxLength={REMARKS_MAX}
+          hint={
+            remarks.length > REMARKS_MAX - 50
+              ? `${REMARKS_MAX - remarks.length} characters left`
+              : mode !== 'cloud'
+                ? undefined
+                : group
+                  ? 'Everyone in the group can see it.'
+                  : 'Everyone in this expense can see it.'
+          }
+          style={s.remarks}
+        />
+      </View>
+
       {existing ? (
-        <View style={{ marginTop: space.xxl }}>
+        <View style={{ marginTop: space.lg }}>
           <ConfirmButton
             title="Delete expense"
             confirmTitle="Tap again to delete"
@@ -399,4 +426,5 @@ const s = StyleSheet.create({
   prefix: { fontSize: 15, color: colors.muted, marginRight: 6 },
   suffix: { fontSize: 13, color: colors.muted, marginLeft: 6, width: 42 },
   status: { fontSize: 14, fontWeight: '600', marginTop: space.md, marginHorizontal: space.xs },
+  remarks: { minHeight: 84, textAlignVertical: 'top', lineHeight: 22 },
 });

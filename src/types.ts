@@ -65,6 +65,8 @@ export interface Expense {
   inputs: Record<Id, string>;
   // Computed share of each participant. Always sums to `amount`.
   shares: Record<Id, number>;
+  /** Optional remarks explaining the expense. */
+  note?: string;
   date: string;
   createdAt: string;
 }

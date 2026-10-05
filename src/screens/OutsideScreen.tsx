@@ -41,6 +41,7 @@ export function OutsideExpenseRow({ e, last, onPress }: { e: Expense; last: bool
       }
       title={e.description}
       subtitle={`${paidText} ${formatMoney(e.amount, e.currency)}${withText}`}
+      note={e.note}
       right={
         diff > 0 ? (
           <Mine label="you lent" amount={formatMoney(diff, e.currency)} color={colors.owed} />

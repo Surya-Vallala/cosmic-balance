@@ -290,6 +290,7 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
                 left={dateBox}
                 title={e.description}
                 subtitle={`${payersLabel(Object.keys(e.payers), meId, nameOf)} paid ${formatMoney(e.amount, e.currency)}`}
+                note={e.note}
                 right={right}
                 onPress={() => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
                 last={last}
