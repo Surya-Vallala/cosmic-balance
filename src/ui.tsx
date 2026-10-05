@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlackHole } from './cosmos';
+import { dayLabel, toDay } from './dates';
 import { fromBase, groupCurrencies } from './logic';
 import { currency, formatMoney } from './money';
 import { colors, fonts, radius, space, tintFor } from './theme';
@@ -341,6 +342,84 @@ export function Field({ label, hint, error, style, ...props }: TextInputProps & 
 }
 
 /** Small right-aligned number input used in lists. */
+/**
+ * A day, shown as "Today" or "Fri, 2 Oct". Tapping it opens the phone's own
+ * calendar (on the web app); elsewhere, arrows step a day at a time.
+ * `value` and `max` are calendar days like "2026-10-05".
+ */
+export function DateField({
+  label,
+  value,
+  onChange,
+  max = toDay(),
+}: {
+  label: string;
+  value: string;
+  onChange: (day: string) => void;
+  max?: string;
+}) {
+  const shown = dayLabel(value);
+  if (Platform.OS === 'web') {
+    return (
+      <View>
+        <Text style={styles.label}>{label}</Text>
+        <View style={styles.dateBox}>
+          <Text style={styles.dateText}>{shown}</Text>
+          <Text style={styles.dateChange}>Change</Text>
+          {React.createElement('input', {
+            type: 'date',
+            value,
+            max,
+            'aria-label': `${label}: ${shown}. Change`,
+            onChange: (e: { target: { value: string } }) => {
+              if (e.target.value) onChange(e.target.value > max ? max : e.target.value);
+            },
+            // Open the calendar wherever the row is tapped (not just on the icon).
+            onClick: (e: { currentTarget: { showPicker?: () => void } }) => {
+              try {
+                e.currentTarget.showPicker?.();
+              } catch {
+                // some browsers only allow it in certain states; the tap still focuses the field
+              }
+            },
+            style: {
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0,
+              border: 0,
+              padding: 0,
+              margin: 0,
+              cursor: 'pointer',
+              colorScheme: 'dark',
+            },
+          })}
+        </View>
+      </View>
+    );
+  }
+  const step = (days: number) => {
+    const [y, m, d] = value.split('-').map(Number);
+    const next = toDay(new Date(y, m - 1, d + days));
+    if (next <= max) onChange(next);
+  };
+  return (
+    <View>
+      <Text style={styles.label}>{label}</Text>
+      <View style={styles.dateBox}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Day before" onPress={() => step(-1)} hitSlop={8}>
+          <Text style={styles.dateChange}>‹</Text>
+        </Pressable>
+        <Text style={[styles.dateText, { textAlign: 'center' }]}>{shown}</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Day after" onPress={() => step(1)} hitSlop={8} disabled={value >= max}>
+          <Text style={[styles.dateChange, value >= max && { opacity: 0.3 }]}>›</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function SmallInput(props: TextInputProps) {
   const [focused, setFocused] = useState(false);
   return (
@@ -698,6 +777,20 @@ export const styles = StyleSheet.create({
     backgroundColor: colors.raised,
   },
   hint: { fontSize: 13, color: colors.muted, marginTop: 6, lineHeight: 18 },
+  dateBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.md,
+    backgroundColor: colors.raised,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    paddingHorizontal: space.md,
+    minHeight: 50,
+    overflow: 'hidden',
+  },
+  dateText: { flex: 1, fontSize: 17, color: colors.text },
+  dateChange: { fontFamily: fonts.medium, fontSize: 14, color: colors.star },
   error: { fontSize: 13, color: colors.owe, marginTop: 6, fontWeight: '600' },
   chip: {
     flexDirection: 'row',

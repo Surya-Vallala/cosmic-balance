@@ -17,6 +17,7 @@ There are two ways to use it:
 
 - **Groups** for trips, flats, regular dinners. Add friends by name, with an optional UPI ID.
 - **One or more payers**: if a bill was paid jointly (you paid ₹2,000 and Ravi paid ₹1,000), pick "Multiple people" and enter what each person paid. Everyone's share is owed to the payers in proportion to what they paid.
+- **Date of each expense**: today unless you change it (tap Date to pick another day from the phone's calendar).
 - **Expenses** split four ways: equally (pick who shared), exact amounts, percentages, or shares (e.g. 2 for a couple, 1 for everyone else). Amounts are kept in paise, so splits always add up exactly.
 - **Several currencies per group**: a Thailand trip can use ₹ and ฿ together. The first currency is the group's main one; for each other currency the group sets one exchange rate (it starts at an approximate value and can be changed any time). Each expense is entered in the currency it was paid in, using the dropdown next to the amount.
 - **Balances** per group and per friend, in plain sentences ("Ravi pays you ₹450"). In multi-currency groups every balance is also shown in the other currencies ("or ฿156.79").

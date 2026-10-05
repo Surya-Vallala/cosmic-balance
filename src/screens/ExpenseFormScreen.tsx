@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { fromDay, toDay } from '../dates';
 import { computePayers, computeSplit, expensePeople, groupCurrencies, toBase } from '../logic';
 import { CURRENCY_CODES, formatMoney, paiseToInput, parseRupees } from '../money';
 import type { ScreenProps } from '../navigation';
@@ -13,6 +14,7 @@ import {
   Chip,
   ConfirmButton,
   CurrencyPicker,
+  DateField,
   Field,
   List,
   rateText,
@@ -51,6 +53,8 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
   const currencies = group ? groupCurrencies(group) : CURRENCY_CODES;
 
   const [description, setDescription] = useState(existing?.description ?? '');
+  // The day it happened: today unless changed.
+  const [day, setDay] = useState(() => toDay(existing?.date ?? new Date()));
   const [cur, setCur] = useState<CurrencyCode>(existing?.currency ?? group?.baseCurrency ?? 'INR');
   const [pickCurrency, setPickCurrency] = useState(false);
   const [amountText, setAmountText] = useState(existing ? paiseToInput(existing.amount) : '');
@@ -137,7 +141,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
         participants: Object.keys(result.shares),
         inputs: splitType === 'equal' ? {} : inputs,
         shares: result.shares,
-        date: existing?.date ?? new Date().toISOString(),
+        date: fromDay(day, existing?.date),
         createdAt: existing?.createdAt ?? new Date().toISOString(),
       },
     });
@@ -179,6 +183,9 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
       ) : outside ? (
         <Text style={ui.hint}>Not in a group. Tap the currency to change it.</Text>
       ) : null}
+      <View style={{ marginTop: space.lg }}>
+        <DateField label="Date" value={day} onChange={setDay} />
+      </View>
 
       {outside ? (
         <>
