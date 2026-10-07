@@ -126,7 +126,7 @@ export default function SettleAllScreen({ navigation, route }: ScreenProps<'Sett
       }
     >
       {currencies.length > 1 ? (
-        <View style={{ marginBottom: space.xl }}>
+        <View style={{ marginBottom: space.md }}>
           <Segmented<string>
             value={cur}
             onChange={setCur}
@@ -141,9 +141,9 @@ export default function SettleAllScreen({ navigation, route }: ScreenProps<'Sett
       </Text>
       <Text style={s.sub}>Adding up every group you share and money outside groups.</Text>
 
-      <List style={{ marginTop: space.xl }}>
+      <List style={{ marginTop: space.md }}>
         {plan.groups.map(({ group, amount: a }) => (
-          <Row key={group.id} left={<GroupBadge name={group.name} size={34} />} title={group.name} right={<BalanceTag amount={a} currency={cur} />} />
+          <Row key={group.id} left={<GroupBadge name={group.name} size={26} />} title={group.name} right={<BalanceTag amount={a} currency={cur} />} />
         ))}
         {plan.outside !== 0 ? (
           <Row title="Outside groups" subtitle="Transfers and cash between you" right={<BalanceTag amount={plan.outside} currency={cur} />} />
@@ -183,28 +183,28 @@ export default function SettleAllScreen({ navigation, route }: ScreenProps<'Sett
 }
 
 const s = StyleSheet.create({
-  headline: { fontFamily: fonts.light, fontSize: 28, lineHeight: 34, letterSpacing: -0.4 },
-  sub: { fontSize: 14, color: colors.muted, marginTop: space.sm },
+  headline: { fontFamily: fonts.light, fontSize: 21, lineHeight: 26, letterSpacing: -0.4 },
+  sub: { fontSize: 12, color: colors.muted, marginTop: 2 },
   totalRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 14,
+    paddingVertical: 8,
     paddingHorizontal: space.lg,
     backgroundColor: colors.raised,
   },
-  totalLabel: { fontFamily: fonts.medium, fontSize: 16, color: colors.text },
-  explain: { fontSize: 13, color: colors.muted, marginTop: space.md, lineHeight: 19, marginHorizontal: space.xs },
+  totalLabel: { fontFamily: fonts.medium, fontSize: 14, color: colors.text },
+  explain: { fontSize: 12, color: colors.muted, marginTop: space.sm, lineHeight: 17, marginHorizontal: space.xs },
   panel: {
-    marginTop: space.xl,
+    marginTop: space.lg,
     backgroundColor: colors.surface,
     borderRadius: 18,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.line,
-    padding: space.lg,
+    padding: space.md,
   },
-  panelTitle: { fontFamily: fonts.medium, fontSize: 16, color: colors.text },
-  panelBody: { fontSize: 14, color: colors.textSoft, marginTop: 4, lineHeight: 20 },
+  panelTitle: { fontFamily: fonts.medium, fontSize: 14, color: colors.text },
+  panelBody: { fontSize: 13, color: colors.textSoft, marginTop: 2, lineHeight: 18 },
   panelHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   done: { flex: 1, backgroundColor: colors.space, alignItems: 'center', justifyContent: 'center', padding: space.xl },
   doneText: { fontFamily: fonts.light, fontSize: 24, color: colors.text, marginTop: space.xl, textAlign: 'center' },

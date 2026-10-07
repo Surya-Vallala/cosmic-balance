@@ -37,7 +37,7 @@ export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'G
   return (
     <Screen>
       {multi ? (
-        <View style={{ marginBottom: space.xl }}>
+        <View style={{ marginBottom: space.md }}>
           <Segmented<string>
             value={shown}
             onChange={setShown}
@@ -53,7 +53,7 @@ export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'G
       </Text>
 
       {multi && Object.keys(sum.byCurrency).length > 0 ? (
-        <List style={{ marginTop: space.lg }}>
+        <List style={{ marginTop: space.md }}>
           {currencies
             .filter((c) => sum.byCurrency[c])
             .map((c, i, arr) => (
@@ -80,7 +80,7 @@ export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'G
       <SectionTitle>Who pays whom</SectionTitle>
       {debts.length === 0 ? (
         <View style={s.settled}>
-          {sum.expenseCount > 0 ? <Supernova size={64} /> : null}
+          {sum.expenseCount > 0 ? <Supernova size={44} /> : null}
           <Text style={s.settledText}>
             {sum.expenseCount > 0 ? 'Everyone in this group is settled up.' : 'Nothing to settle yet.'}
           </Text>
@@ -99,7 +99,7 @@ export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'G
               const tone = d.from === meId ? colors.owe : d.to === meId ? colors.owed : colors.textSoft;
               return (
                 <View key={`${d.from}-${d.to}`} style={[s.personRow, i < debts.length - 1 && s.divider]}>
-                  <Avatar name={name(d.from)} size={32} />
+                  <Avatar name={name(d.from)} size={26} />
                   <View style={{ flex: 1, marginLeft: space.md }}>
                     <Text style={s.personName}>{text}</Text>
                     <Text style={[s.debtAmount, { color: tone }]}>{show(d.amount)}</Text>
@@ -155,7 +155,7 @@ export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'G
       <List>
         {members.map((m, i) => (
           <View key={m.id} style={[s.personRow, i < members.length - 1 && s.divider]}>
-            <Avatar name={name(m.id)} size={36} />
+            <Avatar name={name(m.id)} size={26} />
             <View style={{ flex: 1, marginLeft: space.md, minWidth: 0 }}>
               <Text style={s.personName}>{nameOf(m.id)}</Text>
               <View style={s.stats}>
@@ -187,26 +187,26 @@ function Stat({ label, value }: { label: string; value: string }) {
 }
 
 const s = StyleSheet.create({
-  settled: { alignItems: 'center', gap: space.sm, paddingVertical: space.md },
-  settledText: { fontSize: 14, color: colors.textSoft },
-  debtAmount: { fontFamily: fonts.medium, fontSize: 15, marginTop: 2 },
-  kicker: { fontSize: 13, fontWeight: '600', color: colors.muted },
-  total: { fontFamily: fonts.light, fontSize: 44, lineHeight: 52, color: colors.text, letterSpacing: -1, marginTop: 2 },
-  meta: { fontSize: 14, color: colors.muted, marginTop: 2 },
-  curRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12, paddingHorizontal: space.lg },
-  curLabel: { fontSize: 15, color: colors.text },
-  curAmount: { fontFamily: fonts.medium, fontSize: 15, color: colors.text },
+  settled: { alignItems: 'center', gap: space.xs, paddingVertical: space.sm },
+  settledText: { fontSize: 13, color: colors.textSoft },
+  debtAmount: { fontFamily: fonts.medium, fontSize: 13 },
+  kicker: { fontSize: 12, fontWeight: '600', color: colors.muted },
+  total: { fontFamily: fonts.light, fontSize: 26, lineHeight: 32, color: colors.text, letterSpacing: -0.5 },
+  meta: { fontSize: 12, color: colors.muted, marginTop: 1 },
+  curRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 7, paddingHorizontal: space.lg },
+  curLabel: { fontSize: 14, color: colors.text },
+  curAmount: { fontFamily: fonts.medium, fontSize: 14, color: colors.text },
   curEquiv: { fontSize: 12, color: colors.muted, marginTop: 1 },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
   note: { fontSize: 12, color: colors.muted, marginTop: space.sm, marginHorizontal: space.xs, lineHeight: 17 },
-  bar: { flexDirection: 'row', height: 8, borderRadius: 4, overflow: 'hidden' },
-  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: space.md, marginTop: space.sm },
+  bar: { flexDirection: 'row', height: 6, borderRadius: 3, overflow: 'hidden' },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', columnGap: space.md, rowGap: 2, marginTop: 6 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },
-  legendText: { fontSize: 13, color: colors.textSoft },
-  personRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 14, paddingHorizontal: space.lg },
-  personName: { fontSize: 16, fontWeight: '600', color: colors.text },
-  stats: { flexDirection: 'row', flexWrap: 'wrap', columnGap: space.lg, rowGap: 4, marginTop: 6 },
-  statLabel: { fontSize: 11, color: colors.muted, fontWeight: '600' },
-  statValue: { fontFamily: fonts.medium, fontSize: 13, color: colors.textSoft, marginTop: 1 },
+  legendText: { fontSize: 12, color: colors.textSoft },
+  personRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: space.lg },
+  personName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  stats: { flexDirection: 'row', flexWrap: 'wrap', columnGap: space.md, rowGap: 2, marginTop: 2 },
+  statLabel: { fontSize: 10, color: colors.muted, fontWeight: '600' },
+  statValue: { fontFamily: fonts.medium, fontSize: 12, color: colors.textSoft },
 });
