@@ -68,7 +68,7 @@ export function Screen({
         {children}
       </ScrollView>
       {footer ? (
-        <View style={[styles.footer, { paddingBottom: space.md + insets.bottom }]}>
+        <View style={[styles.footer, { paddingBottom: space.sm + insets.bottom }]}>
           {footerItems(footer).map((item, i) => (
             <View key={i} style={{ flex: 1 }}>
               {item}
@@ -646,12 +646,12 @@ export function Row({
           {title}
         </Text>
         {subtitle ? (
-          <Text style={styles.rowSubtitle} numberOfLines={2}>
+          <Text style={styles.rowSubtitle} numberOfLines={note ? 1 : 2}>
             {subtitle}
+            {note ? <Text style={styles.rowNote}> · {note.replace(/\s+/g, ' ').trim()}</Text> : null}
           </Text>
-        ) : null}
-        {note ? (
-          <Text style={styles.rowNote} numberOfLines={1}>
+        ) : note ? (
+          <Text style={[styles.rowSubtitle, styles.rowNote]} numberOfLines={1}>
             {note.replace(/\s+/g, ' ').trim()}
           </Text>
         ) : null}
@@ -663,6 +663,22 @@ export function Row({
   return (
     <Pressable onPress={onPress} style={({ pressed }) => pressed && { backgroundColor: colors.raised }}>
       {content}
+    </Pressable>
+  );
+}
+
+/** A small rounded button for secondary links (Group summary, Invite…). */
+export function Pill({ title, onPress, accessibilityLabel }: { title: string; onPress: () => void; accessibilityLabel?: string }) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel ?? title}
+      onPress={onPress}
+      hitSlop={6}
+      style={({ pressed }) => [styles.pill, pressed && { backgroundColor: colors.raised }]}
+    >
+      <Text style={styles.pillText}>{title}</Text>
+      <Text style={[styles.pillText, { color: colors.muted, fontSize: 15, lineHeight: 16 }]}>›</Text>
     </Pressable>
   );
 }
@@ -746,7 +762,7 @@ export function Empty({ title, body, action }: { title: string; body: string; ac
 export const styles = StyleSheet.create({
   footer: {
     paddingHorizontal: space.lg,
-    paddingTop: space.md,
+    paddingTop: space.sm,
     backgroundColor: colors.space,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.line,
@@ -754,15 +770,15 @@ export const styles = StyleSheet.create({
     gap: space.sm,
   },
   button: {
-    minHeight: 50,
-    paddingHorizontal: space.lg,
+    minHeight: 38,
+    paddingHorizontal: space.sm,
     borderRadius: radius.md,
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
   buttonSmall: { minHeight: 34, borderRadius: radius.sm, paddingHorizontal: space.md },
-  buttonText: { fontFamily: fonts.medium, fontSize: 15, letterSpacing: 0.2 },
+  buttonText: { fontFamily: fonts.medium, fontSize: 14, letterSpacing: 0.2 },
   label: { fontSize: 13, fontWeight: '600', color: colors.muted, marginBottom: 8, letterSpacing: 0.2 },
   input: {
     backgroundColor: colors.raised,
@@ -815,9 +831,9 @@ export const styles = StyleSheet.create({
   chipOn: { backgroundColor: colors.text, borderColor: colors.text },
   chipText: { fontSize: 15, color: colors.text, fontWeight: '500' },
   segmented: { flexDirection: 'row', backgroundColor: colors.surface, borderRadius: radius.md, padding: 3, borderWidth: 1, borderColor: colors.line },
-  segment: { flex: 1, paddingVertical: 9, alignItems: 'center', borderRadius: radius.sm },
+  segment: { flex: 1, paddingVertical: 6, alignItems: 'center', borderRadius: radius.sm },
   segmentOn: { backgroundColor: colors.raised },
-  segmentText: { fontSize: 14, fontWeight: '600', color: colors.muted },
+  segmentText: { fontSize: 13, fontWeight: '600', color: colors.muted },
   amountBox: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -873,21 +889,33 @@ export const styles = StyleSheet.create({
     borderColor: colors.line,
     overflow: 'hidden',
   },
-  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: space.lg },
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: space.lg },
   rowDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
-  rowTitle: { fontSize: 16, color: colors.text, fontWeight: '600' },
-  rowSubtitle: { fontSize: 13, color: colors.muted, marginTop: 2 },
-  rowNote: { fontSize: 13, color: colors.textSoft, fontStyle: 'italic', marginTop: 2 },
+  rowTitle: { fontSize: 14, color: colors.text, fontWeight: '600' },
+  rowSubtitle: { fontSize: 12, color: colors.muted, marginTop: 1 },
+  rowNote: { color: colors.textSoft, fontStyle: 'italic' },
+  pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
+    borderColor: colors.line,
+    backgroundColor: colors.surface,
+  },
+  pillText: { fontSize: 13, color: colors.textSoft, fontWeight: '600' },
   sectionTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: space.xl,
-    marginBottom: space.sm,
+    marginTop: space.lg,
+    marginBottom: 6,
   },
-  sectionTitle: { fontFamily: fonts.medium, fontSize: 15, color: colors.textSoft, letterSpacing: 0.2 },
-  balanceLabel: { fontSize: 12, fontWeight: '600' },
-  balanceAmount: { fontFamily: fonts.medium, fontSize: 15 },
+  sectionTitle: { fontFamily: fonts.medium, fontSize: 13, color: colors.textSoft, letterSpacing: 0.2 },
+  balanceLabel: { fontSize: 11, fontWeight: '600' },
+  balanceAmount: { fontFamily: fonts.medium, fontSize: 14 },
   empty: { alignItems: 'center', paddingVertical: space.xxl, paddingHorizontal: space.lg },
   emptyTitle: { fontFamily: fonts.medium, fontSize: 18, color: colors.text, textAlign: 'center', marginTop: space.lg },
   emptyBody: { fontSize: 15, color: colors.muted, textAlign: 'center', marginTop: 6, lineHeight: 21 },

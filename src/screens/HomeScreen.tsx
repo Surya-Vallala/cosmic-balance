@@ -13,6 +13,9 @@ import { colors, fonts, space } from '../theme';
 import type { Totals } from '../types';
 import { Avatar, BalanceTag, Button, Empty, GroupBadge, List, Row, Segmented, Starfield, TotalsTag, Wordmark } from '../ui';
 
+/** Size of group badges and avatars in the lists. */
+const LIST_ICON = 28;
+
 type Tab = 'groups' | 'friends' | 'activity';
 
 /** "₹1,250" or "₹1,250 and $40" */
@@ -85,9 +88,9 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
   return (
     <View style={{ flex: 1, backgroundColor: colors.space }}>
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: space.xxl }}>
-      <View style={[s.header, { paddingTop: insets.top + space.lg }]}>
+      <View style={[s.header, { paddingTop: insets.top + space.sm }]}>
         <Starfield count={30} seed={3} />
-        <Libra width={96} opacity={0.8} style={{ position: 'absolute', right: 76, top: insets.top + 4 }} />
+        <Libra width={64} opacity={0.8} style={{ position: 'absolute', right: 76, top: insets.top + 4 }} />
         <View style={s.topRow}>
           <Wordmark size={17} />
           <View style={s.topActions}>
@@ -98,13 +101,13 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
               onPress={() => navigation.navigate('FriendForm', { personId: meId })}
               hitSlop={8}
             >
-              <Avatar name={me?.name ?? '?'} size={34} />
+              <Avatar name={me?.name ?? '?'} size={28} />
             </Pressable>
           </View>
         </View>
         <Text style={s.headline}>{headline}</Text>
         {single && inn + out > 0 ? (
-          <View style={{ marginTop: space.xl }}>
+          <View style={{ marginTop: space.sm }}>
             <View style={s.beam}>
               {inn > 0 ? <View style={{ flex: inn, backgroundColor: colors.owed, borderRadius: 2 }} /> : null}
               {inn > 0 && out > 0 ? <View style={{ width: 4 }} /> : null}
@@ -129,7 +132,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
           ]}
         />
 
-        <View style={{ marginTop: space.lg }}>
+        <View style={{ marginTop: space.sm }}>
           {tab === 'groups' ? (
             state.groups.length === 0 ? (
               <>
@@ -163,7 +166,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                     return (
                       <Row
                         key={g.id}
-                        left={<GroupBadge name={g.name} />}
+                        left={<GroupBadge name={g.name} size={LIST_ICON} />}
                         title={g.name}
                         subtitle={
                           waiting
@@ -178,7 +181,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                   })}
                   {outsideCount > 0 ? (
                     <Row
-                      left={<OutsideBadge />}
+                      left={<OutsideBadge size={LIST_ICON} />}
                       title="Outside groups"
                       subtitle={`${outsideCount} expense${outsideCount === 1 ? '' : 's'} with friends, not in a group`}
                       right={<TotalsTag totals={Object.fromEntries(outsideNet)} />}
@@ -191,7 +194,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                   title="Start a new group"
                   variant="secondary"
                   onPress={() => navigation.navigate('GroupForm', {})}
-                  style={{ marginTop: space.lg }}
+                  style={{ marginTop: space.md }}
                 />
               </>
             )
@@ -211,7 +214,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                   {friends.map((p, i) => (
                     <Row
                       key={p.id}
-                      left={<Avatar name={p.name} />}
+                      left={<Avatar name={p.name} size={LIST_ICON} />}
                       title={p.name}
                       subtitle={
                         mode === 'cloud' && !p.userId
@@ -230,7 +233,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                   title="Add a friend"
                   variant="secondary"
                   onPress={() => navigation.navigate('FriendForm', {})}
-                  style={{ marginTop: space.lg }}
+                  style={{ marginTop: space.md }}
                 />
               </>
             )
@@ -245,7 +248,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                   <Row
                     key={a.id}
                     title={a.text}
-                    titleLines={3}
+                    titleLines={2}
                     subtitle={relativeDay(a.at)}
                     onPress={
                       a.groupId && state.groups.some((g) => g.id === a.groupId)
@@ -272,7 +275,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
       </View>
     </ScrollView>
 
-      <View style={[s.bar, { paddingBottom: space.md + insets.bottom }]}>
+      <View style={[s.bar, { paddingBottom: space.sm + insets.bottom }]}>
         <View style={{ flex: 1 }}>
           <Button title="Add expense" onPress={addExpense} />
         </View>
@@ -329,12 +332,12 @@ function OutsideBadge({ size = 40 }: { size?: number }) {
 }
 
 const s = StyleSheet.create({
-  header: { paddingHorizontal: space.xl, paddingBottom: space.xxl, overflow: 'hidden' },
+  header: { paddingHorizontal: space.lg, paddingBottom: space.md, overflow: 'hidden' },
   bar: {
     flexDirection: 'row',
     gap: space.sm,
     paddingHorizontal: space.lg,
-    paddingTop: space.md,
+    paddingTop: space.sm,
     backgroundColor: colors.space,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.line,
@@ -357,13 +360,13 @@ const s = StyleSheet.create({
   topActions: { flexDirection: 'row', alignItems: 'center', gap: space.md },
   headline: {
     fontFamily: fonts.light,
-    fontSize: 32,
-    lineHeight: 40,
+    fontSize: 22,
+    lineHeight: 28,
     color: colors.text,
-    marginTop: space.xxl,
+    marginTop: space.md,
     letterSpacing: -0.5,
   },
   beam: { flexDirection: 'row', height: 4 },
   beamLegend: { flexDirection: 'row', justifyContent: 'space-between', marginTop: space.sm, gap: space.md },
-  beamText: { fontSize: 13, fontWeight: '600', flexShrink: 1 },
+  beamText: { fontSize: 12, fontWeight: '600', flexShrink: 1 },
 });

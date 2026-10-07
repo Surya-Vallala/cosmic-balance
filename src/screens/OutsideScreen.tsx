@@ -60,8 +60,8 @@ export function OutsideExpenseRow({ e, last, onPress }: { e: Expense; last: bool
 function Mine({ label, amount, color }: { label: string; amount: string; color: string }) {
   return (
     <View style={{ alignItems: 'flex-end' }}>
-      <Text style={{ fontSize: 12, fontWeight: '600', color }}>{label}</Text>
-      <Text style={{ fontFamily: fonts.medium, fontSize: 14, color }}>{amount}</Text>
+      <Text style={{ fontSize: 11, fontWeight: '600', color }}>{label}</Text>
+      <Text style={{ fontFamily: fonts.medium, fontSize: 13, color }}>{amount}</Text>
     </View>
   );
 }
@@ -99,8 +99,8 @@ export default function OutsideScreen({ navigation }: ScreenProps<'Outside'>) {
 
 const s = StyleSheet.create({
   lede: { fontSize: 14, color: colors.muted, lineHeight: 20, marginBottom: space.lg, marginHorizontal: space.xs },
-  dateBox: { width: 38, alignItems: 'center' },
-  dateMonth: { fontSize: 11, fontWeight: '600', color: colors.muted },
-  dateDay: { fontFamily: fonts.light, fontSize: 20, color: colors.text, lineHeight: 24 },
-  even: { fontSize: 12, color: colors.muted },
+  dateBox: { width: 30, alignItems: 'center' },
+  dateMonth: { fontSize: 9, fontWeight: '600', color: colors.muted },
+  dateDay: { fontFamily: fonts.light, fontSize: 15, color: colors.text, lineHeight: 18 },
+  even: { fontSize: 11, color: colors.muted },
 });

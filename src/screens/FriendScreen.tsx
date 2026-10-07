@@ -68,23 +68,25 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
 
   return (
     <Screen>
-      <View style={{ alignItems: 'center', marginTop: space.md }}>
-        {overall.length === 0 && hasHistory ? <Supernova size={88} /> : <Avatar name={friend.name} size={72} />}
-        {lines.map((l) => (
-          <Text key={l.text} style={[s.headline, { color: l.color }]}>
-            {l.text}
-          </Text>
-        ))}
-        <Text style={s.caption}>Overall, across every group and outside them</Text>
-        {friend.upiId ? <Text style={s.upi}>UPI: {friend.upiId}</Text> : null}
-        {mode === 'cloud' && !friend.userId ? (
-          <Text style={s.upi}>
-            {friend.email
-              ? `Not on Cosmic Balance yet. Linked automatically when they sign in with ${friend.email}.`
-              : 'Not on Cosmic Balance yet. Send them their invite link.'}
-          </Text>
-        ) : null}
+      <View style={s.head}>
+        {overall.length === 0 && hasHistory ? <Supernova size={48} /> : <Avatar name={friend.name} size={44} />}
+        <View style={{ flex: 1, marginLeft: space.md }}>
+          {lines.map((l) => (
+            <Text key={l.text} style={[s.headline, { color: l.color }]}>
+              {l.text}
+            </Text>
+          ))}
+          <Text style={s.caption}>Overall, across every group and outside them</Text>
+        </View>
       </View>
+      {friend.upiId ? <Text style={s.upi}>UPI: {friend.upiId}</Text> : null}
+      {mode === 'cloud' && !friend.userId ? (
+        <Text style={s.upi}>
+          {friend.email
+            ? `Not on Cosmic Balance yet. Linked automatically when they sign in with ${friend.email}.`
+            : 'Not on Cosmic Balance yet. Send them their invite link.'}
+        </Text>
+      ) : null}
 
       {notJoined && invites.unavailable(friend.id) ? (
         <Text style={[s.inviteNote, { textAlign: 'center', marginTop: space.lg }]}>
@@ -122,13 +124,15 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
             <Button title="Settle up" onPress={() => navigation.navigate('SettleAll', { friendId: friend.id })} />
           </View>
         ) : null}
+        <View style={{ flex: 1 }}>
+          <Button
+            title="Transfer"
+            variant="secondary"
+            accessibilityLabel="Transfer money"
+            onPress={() => navigation.navigate('Transfer', { from: meId, to: friend.id })}
+          />
+        </View>
       </View>
-      <Button
-        title="Transfer money"
-        variant="ghost"
-        onPress={() => navigation.navigate('Transfer', { from: meId, to: friend.id })}
-        style={{ marginTop: space.xs }}
-      />
 
       {byGroup.length > 0 ? (
         <>
@@ -137,7 +141,7 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
             {byGroup.map(({ group, amount }, i) => (
               <Row
                 key={group.id}
-                left={<GroupBadge name={group.name} size={36} />}
+                left={<GroupBadge name={group.name} size={26} />}
                 title={group.name}
                 right={<BalanceTag amount={amount} currency={group.baseCurrency} />}
                 onPress={() => navigation.navigate('Group', { groupId: group.id })}
@@ -209,7 +213,7 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
           {sharedGroups.map((g, i) => (
             <Row
               key={g.id}
-              left={<GroupBadge name={g.name} size={36} />}
+              left={<GroupBadge name={g.name} size={26} />}
               title={g.name}
               subtitle={`${g.memberIds.length} people`}
               onPress={() => navigation.navigate('Group', { groupId: g.id })}
@@ -266,12 +270,13 @@ function RemoveFriend({
 
 const s = StyleSheet.create({
   headerLink: { color: colors.star, fontSize: 16, fontWeight: '600', paddingHorizontal: 8 },
-  headline: { fontFamily: fonts.light, fontSize: 24, textAlign: 'center', marginTop: space.md, lineHeight: 30 },
-  caption: { fontSize: 13, color: colors.muted, marginTop: 4 },
+  head: { flexDirection: 'row', alignItems: 'center', marginTop: space.xs },
+  headline: { fontFamily: fonts.light, fontSize: 19, lineHeight: 24 },
+  caption: { fontSize: 12, color: colors.muted, marginTop: 1 },
   inviteNote: { fontSize: 12, color: colors.muted, marginTop: space.sm, marginHorizontal: space.xs, lineHeight: 16 },
   removeNote: { fontSize: 12, color: colors.muted, textAlign: 'center', marginTop: space.sm, lineHeight: 17 },
-  upi: { fontSize: 13, color: colors.muted, marginTop: 4, textAlign: 'center', lineHeight: 18 },
-  actions: { flexDirection: 'row', gap: space.sm, marginTop: space.xl },
+  upi: { fontSize: 12, color: colors.muted, marginTop: space.sm, lineHeight: 17 },
+  actions: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
   none: { fontSize: 14, color: colors.muted, lineHeight: 20, marginHorizontal: space.xs },
-  amount: { fontFamily: fonts.medium, fontSize: 14 },
+  amount: { fontFamily: fonts.medium, fontSize: 13 },
 });

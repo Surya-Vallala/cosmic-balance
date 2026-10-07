@@ -13,7 +13,7 @@ import { shareText } from '../share';
 import { useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { JoinRequest, Person } from '../types';
-import { Avatar, Button, Empty, equivalents, List, rateText, Row, Screen, SectionTitle, styles as ui } from '../ui';
+import { Avatar, Button, Empty, equivalents, List, Pill, rateText, Row, Screen, SectionTitle, styles as ui } from '../ui';
 
 export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>) {
   const { state, mode, userId, refresh } = useStore();
@@ -131,23 +131,12 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
         {multi ? `. ${groupCurrencies(group).slice(1).map((c) => rateText(group, c)).join(', ')}` : ''}
       </Text>
 
-      <List style={{ marginTop: space.lg }}>
+      <View style={s.pills}>
+        <Pill title="Group summary" onPress={() => navigation.navigate('GroupSummary', { groupId: group.id })} />
         {mode === 'cloud' && group.inviteCode ? (
-          <Row
-            title="Invite friends"
-            subtitle="Share the group’s link on WhatsApp"
-            right={<Text style={[s.chevron, showLink && { transform: [{ rotate: '90deg' }] }]}>›</Text>}
-            onPress={() => setShowLink((v) => !v)}
-          />
+          <Pill title={showLink ? 'Hide invite link' : 'Invite friends'} onPress={() => setShowLink((v) => !v)} />
         ) : null}
-        <Row
-          title="Group summary"
-          subtitle={debts.length ? 'Who pays whom, and what each person paid and owes' : 'Total spending, and what each person paid and owes'}
-          right={<Text style={s.chevron}>›</Text>}
-          onPress={() => navigation.navigate('GroupSummary', { groupId: group.id })}
-          last
-        />
-      </List>
+      </View>
       {mode === 'cloud' && group.inviteCode && showLink ? (
         <View style={{ marginTop: space.md }}>
           <ShareLink
@@ -341,18 +330,18 @@ function payersLabel(ids: string[], meId: string, nameOf: (id: string) => string
 function Mine({ label, amount, color }: { label: string; amount: string; color: string }) {
   return (
     <View style={{ alignItems: 'flex-end' }}>
-      <Text style={{ fontSize: 12, fontWeight: '600', color }}>{label}</Text>
-      <Text style={{ fontFamily: fonts.medium, fontSize: 14, color }}>{amount}</Text>
+      <Text style={{ fontSize: 11, fontWeight: '600', color }}>{label}</Text>
+      <Text style={{ fontFamily: fonts.medium, fontSize: 13, color }}>{amount}</Text>
     </View>
   );
 }
 
 const s = StyleSheet.create({
   headerLink: { color: colors.star, fontSize: 16, fontWeight: '600', paddingHorizontal: 8 },
-  summary: { fontFamily: fonts.light, fontSize: 28, lineHeight: 34, letterSpacing: -0.4 },
+  summary: { fontFamily: fonts.light, fontSize: 21, lineHeight: 26, letterSpacing: -0.4 },
+  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm, marginTop: space.md },
   equiv: { fontSize: 15, color: colors.textSoft, marginTop: 2 },
-  meta: { fontSize: 13, color: colors.muted, marginTop: space.sm, lineHeight: 18 },
-  chevron: { fontSize: 24, color: colors.muted, lineHeight: 26 },
+  meta: { fontSize: 12, color: colors.muted, marginTop: 2, lineHeight: 18 },
   debtRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: space.lg },
   divider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
   debtText: { fontSize: 15, color: colors.text },
@@ -360,10 +349,10 @@ const s = StyleSheet.create({
   debtAmount: { fontFamily: fonts.medium, fontSize: 16, marginTop: 2 },
   debtEquiv: { fontSize: 12, color: colors.muted, marginTop: 1 },
   note: { fontSize: 12, color: colors.muted, marginTop: space.sm, marginHorizontal: space.xs },
-  dateBox: { width: 38, alignItems: 'center' },
-  dateMonth: { fontSize: 11, fontWeight: '600', color: colors.muted },
-  dateDay: { fontFamily: fonts.light, fontSize: 20, color: colors.text, lineHeight: 24 },
-  payAmount: { fontFamily: fonts.medium, fontSize: 14, color: colors.textSoft },
+  dateBox: { width: 30, alignItems: 'center' },
+  dateMonth: { fontSize: 9, fontWeight: '600', color: colors.muted },
+  dateDay: { fontFamily: fonts.light, fontSize: 15, color: colors.text, lineHeight: 18 },
+  payAmount: { fontFamily: fonts.medium, fontSize: 13, color: colors.textSoft },
   notInvolved: { fontSize: 12, color: colors.muted },
   settled: { alignItems: 'center', marginTop: space.xl, gap: space.sm },
   settledText: { fontSize: 14, color: colors.textSoft },
