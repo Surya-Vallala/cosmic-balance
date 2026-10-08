@@ -4,6 +4,7 @@ import { fromDay, toDay } from '../dates';
 import { computePayers, computeSplit, expensePeople, groupCurrencies, toBase } from '../logic';
 import { CURRENCY_CODES, formatMoney, paiseToInput, parseRupees } from '../money';
 import type { ScreenProps } from '../navigation';
+import { filterFriends, SEARCH_FROM } from '../search';
 import { uid, useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { CurrencyCode, SplitType } from '../types';
@@ -19,6 +20,7 @@ import {
   List,
   rateText,
   Screen,
+  SearchBox,
   Segmented,
   SmallInput,
   styles as ui,
@@ -71,6 +73,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
   const [selected, setSelected] = useState<string[]>(existing?.splitType === 'equal' ? existing.participants : members);
   const [inputs, setInputs] = useState<Record<string, string>>(existing?.splitType !== 'equal' ? existing?.inputs ?? {} : {});
   const [remarks, setRemarks] = useState(existing?.note ?? '');
+  const [search, setSearch] = useState('');
   const [touched, setTouched] = useState(false);
 
   useLayoutEffect(() => {
@@ -195,11 +198,14 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
       {outside ? (
         <>
           <Text style={[ui.label, { marginTop: space.xl }]}>With</Text>
+          {friends.length >= SEARCH_FROM ? (
+            <SearchBox value={search} onChangeText={setSearch} style={{ marginBottom: space.sm }} />
+          ) : null}
           {friends.length === 0 ? (
             <Text style={[ui.hint, { marginTop: 0 }]}>Add a friend first, under Friends on the home screen.</Text>
           ) : (
             <View style={s.chips}>
-              {friends.map((f) => (
+              {filterFriends(friends, search, withIds).map((f) => (
                 <Chip
                   key={f.id}
                   label={f.name}
@@ -210,6 +216,9 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
               ))}
             </View>
           )}
+          {search.trim() && filterFriends(friends, search).length === 0 ? (
+            <Text style={[ui.hint, { marginTop: 0 }]}>No friend matches “{search.trim()}”.</Text>
+          ) : null}
           {withError ? (
             <Text style={ui.error}>{withError}</Text>
           ) : (

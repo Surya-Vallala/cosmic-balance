@@ -33,7 +33,7 @@ export default function AboutScreen() {
           style={s.logo}
           resizeMode="contain"
           accessibilityRole="image"
-          accessibilityLabel="Tesseract Studio, Studio and Infra"
+          accessibilityLabel="Tesseract, Design and Build"
         />
         <Text style={s.body}>Tesseract Studio, Hyderabad</Text>
       </View>

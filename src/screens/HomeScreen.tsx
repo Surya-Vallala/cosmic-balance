@@ -6,12 +6,13 @@ import { relativeDay } from '../dates';
 import { friendBalances, groupCurrencies, groupNet, nonGroupExpenses, nonZero, outsideBalances, sumTotals } from '../logic';
 import { currency, formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
+import { filterFriends, SEARCH_FROM } from '../search';
 import { IncomingFriendRequests } from '../friend-requests';
 import { Bell } from '../notify-ui';
 import { useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { Totals } from '../types';
-import { Avatar, BalanceTag, Button, Empty, GroupBadge, List, Row, Segmented, Starfield, TotalsTag, Wordmark } from '../ui';
+import { Avatar, BalanceTag, Button, Empty, GroupBadge, List, Row, SearchBox, Segmented, Starfield, TotalsTag, Wordmark } from '../ui';
 
 /** Size of group badges and avatars in the lists. */
 const LIST_ICON = 28;
@@ -28,6 +29,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
   const { state, mode, userId } = useStore();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('groups');
+  const [search, setSearch] = useState('');
   const meId = state.meId!;
   const me = state.people[meId];
 
@@ -72,6 +74,8 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
   const friends = Object.values(state.people)
     .filter((p) => p.id !== meId && !p.requesting)
     .sort((a, b) => friendTotal(b.id) - friendTotal(a.id) || a.name.localeCompare(b.name));
+
+  const shown = filterFriends(friends, search);
 
   const outsideCount = nonGroupExpenses(state.expenses).length;
   // My balance across expenses outside groups, per currency.
@@ -210,8 +214,14 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
               />
             ) : (
               <>
+                {friends.length >= SEARCH_FROM ? (
+                  <SearchBox value={search} onChangeText={setSearch} style={{ marginBottom: space.sm }} />
+                ) : null}
+                {shown.length === 0 ? (
+                  <Text style={s.noMatch}>No friend matches “{search.trim()}”.</Text>
+                ) : (
                 <List>
-                  {friends.map((p, i) => (
+                  {shown.map((p, i) => (
                     <Row
                       key={p.id}
                       left={<Avatar name={p.name} size={LIST_ICON} />}
@@ -225,10 +235,11 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                       }
                       right={<TotalsTag totals={fb[p.id] ?? {}} />}
                       onPress={() => navigation.navigate('Friend', { friendId: p.id })}
-                      last={i === friends.length - 1}
+                      last={i === shown.length - 1}
                     />
                   ))}
                 </List>
+                )}
                 <Button
                   title="Add a friend"
                   variant="secondary"
@@ -342,6 +353,7 @@ const s = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.line,
   },
+  noMatch: { fontSize: 13, color: colors.muted, marginHorizontal: space.xs, marginVertical: space.sm },
   credit: { alignItems: 'center', marginTop: space.xxl, paddingVertical: space.md, gap: 8 },
   creditText: { fontSize: 11, color: colors.muted, letterSpacing: 0.4 },
   creditLogo: { width: 150, height: 25, opacity: 0.85 },

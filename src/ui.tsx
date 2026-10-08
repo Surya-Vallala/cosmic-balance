@@ -439,6 +439,51 @@ export function SmallInput(props: TextInputProps) {
   );
 }
 
+/** A small search field with a magnifier and a clear button. */
+export function SearchBox({
+  value,
+  onChangeText,
+  placeholder = 'Search friends',
+  accessibilityLabel,
+  style,
+}: {
+  value: string;
+  onChangeText: (v: string) => void;
+  placeholder?: string;
+  accessibilityLabel?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <View style={[styles.search, focused && { borderColor: colors.star }, style]}>
+      <View style={styles.searchIcon} accessible={false}>
+        <View style={styles.searchLens} />
+        <View style={styles.searchHandle} />
+      </View>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.placeholder}
+        keyboardAppearance="dark"
+        selectionColor={colors.star}
+        autoCorrect={false}
+        autoCapitalize="none"
+        returnKeyType="search"
+        accessibilityLabel={accessibilityLabel ?? placeholder}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={styles.searchInput}
+      />
+      {value ? (
+        <Pressable onPress={() => onChangeText('')} accessibilityRole="button" accessibilityLabel="Clear search" hitSlop={10}>
+          <Text style={styles.searchClear}>×</Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 export function Chip({ label, selected, onPress, leading }: { label: string; selected: boolean; onPress: () => void; leading?: React.ReactNode }) {
   return (
     <Pressable
@@ -894,6 +939,40 @@ export const styles = StyleSheet.create({
   rowTitle: { fontSize: 14, color: colors.text, fontWeight: '600' },
   rowSubtitle: { fontSize: 12, color: colors.muted, marginTop: 1 },
   rowNote: { color: colors.textSoft, fontStyle: 'italic' },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    height: 38,
+    paddingHorizontal: space.md,
+    backgroundColor: colors.raised,
+    borderWidth: 1,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+  },
+  searchIcon: { width: 14, height: 14 },
+  searchLens: { position: 'absolute', left: 0, top: 0, width: 11, height: 11, borderRadius: 6, borderWidth: 1.5, borderColor: colors.muted },
+  searchHandle: {
+    position: 'absolute',
+    left: 8.5,
+    top: 10.5,
+    width: 5,
+    height: 1.5,
+    borderRadius: 1,
+    backgroundColor: colors.muted,
+    transform: [{ rotate: '45deg' }],
+  },
+  searchInput: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 14,
+    color: colors.text,
+    paddingVertical: 0,
+    height: 36,
+    // The box itself shows focus (gold border), so no second ring on the web app.
+    ...(Platform.OS === 'web' ? ({ outlineStyle: 'none' } as object) : {}),
+  },
+  searchClear: { fontSize: 20, lineHeight: 22, color: colors.muted, paddingHorizontal: 2 },
   pill: {
     flexDirection: 'row',
     alignItems: 'center',

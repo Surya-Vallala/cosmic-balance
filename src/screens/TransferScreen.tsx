@@ -3,6 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { fromDay, relativeDay, toDay } from '../dates';
 import { CURRENCY_CODES, formatMoney, paiseToInput, parseRupees } from '../money';
 import type { ScreenProps } from '../navigation';
+import { filterFriends, SEARCH_FROM } from '../search';
 import { uid, useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { CurrencyCode } from '../types';
@@ -19,6 +20,7 @@ import {
   List,
   Row,
   Screen,
+  SearchBox,
   styles as ui,
 } from '../ui';
 
@@ -45,6 +47,7 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
   // The day the money was given: today unless changed.
   const [day, setDay] = useState(() => toDay(existing?.date ?? new Date()));
   const [touched, setTouched] = useState(false);
+  const [search, setSearch] = useState('');
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -130,9 +133,15 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
     navigation.goBack();
   };
 
+  const friendCount = people.length - 1;
+  const asPeople = people.map((id) => ({ id, name: state.people[id]?.name ?? '', email: state.people[id]?.email }));
+  // You and whoever is picked always stay in view while searching.
+  const shownFor = (value: string) => filterFriends(asPeople, search, [meId, value]).map((p) => p.id);
+  const nobody = !!search.trim() && filterFriends(asPeople.slice(1), search).length === 0;
+
   const chooser = (value: string, onChange: (v: string) => void) => (
     <View style={s.chips}>
-      {people.map((id) => (
+      {shownFor(value).map((id) => (
         <Chip
           key={id}
           label={nameOf(id)}
@@ -151,7 +160,12 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
         balance with each other.
       </Text>
 
-      <Text style={[ui.label, { marginTop: space.xl }]}>Who gave the money</Text>
+      {friendCount >= SEARCH_FROM ? (
+        <SearchBox value={search} onChangeText={setSearch} style={{ marginTop: space.lg }} />
+      ) : null}
+      {nobody ? <Text style={ui.hint}>No friend matches “{search.trim()}”.</Text> : null}
+
+      <Text style={[ui.label, { marginTop: space.lg }]}>Who gave the money</Text>
       {chooser(from, setFrom)}
 
       <Text style={[ui.label, { marginTop: space.xl }]}>Who received it</Text>

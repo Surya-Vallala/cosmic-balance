@@ -5,6 +5,7 @@ import { isEmail } from '../emails';
 import { groupNet } from '../logic';
 import { approxRate, currency, CURRENCY_CODES, parseNumber } from '../money';
 import type { ScreenProps } from '../navigation';
+import { filterFriends } from '../search';
 import { uid, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { CurrencyCode } from '../types';
@@ -52,6 +53,9 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
   const friends = Object.values(state.people)
     .filter((p) => p.id !== meId && !p.requesting)
     .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Typing in the add box also narrows the list (people already in stay in view).
+  const shownFriends = filterFriends(friends, newFriend, members);
 
   const groupExpenses = existing ? state.expenses.filter((x) => x.groupId === existing.id) : [];
   const groupPayments = existing ? state.payments.filter((x) => x.groupId === existing.id) : [];
@@ -206,30 +210,11 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
       />
 
       <Text style={ui.label}>Who’s in it</Text>
-      <View style={s.chips}>
-        <Chip
-          label="You"
-          selected
-          onPress={() => toggle(meId)}
-          leading={<Avatar name={state.people[meId]?.name ?? 'You'} size={20} />}
-        />
-        {friends.map((f) => (
-          <Chip
-            key={f.id}
-            label={f.name}
-            selected={members.includes(f.id)}
-            onPress={() => toggle(f.id)}
-            leading={<Avatar name={f.name} size={20} />}
-          />
-        ))}
-      </View>
-      {error ? <Text style={ui.error}>{error}</Text> : null}
-
       <View style={s.addRow}>
         <TextInput
           value={newFriend}
           onChangeText={setNewFriend}
-          placeholder={mode === 'cloud' ? 'Name or Gmail address' : 'Add someone new by name'}
+          placeholder={mode === 'cloud' ? 'Search friends, or add by name or Gmail' : 'Search friends, or add someone new'}
           placeholderTextColor={colors.placeholder}
           keyboardAppearance="dark"
           selectionColor={colors.star}
@@ -239,7 +224,7 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
           autoCapitalize={mode === 'cloud' ? 'none' : 'words'}
           autoCorrect={false}
           keyboardType={mode === 'cloud' ? 'email-address' : 'default'}
-          accessibilityLabel={mode === 'cloud' ? 'Add a friend by name or Gmail address' : 'Add someone new by name'}
+          accessibilityLabel={mode === 'cloud' ? 'Search friends, or add someone by name or Gmail address' : 'Search friends, or add someone new by name'}
         />
         <Button
           title={adding ? 'Adding…' : 'Add'}
@@ -250,6 +235,28 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
           style={{ minHeight: 48 }}
         />
       </View>
+      {newFriend.trim() && filterFriends(friends, newFriend).length === 0 ? (
+        <Text style={ui.hint}>No friend matches “{newFriend.trim()}”. Tap Add to add them as someone new.</Text>
+      ) : null}
+
+      <View style={[s.chips, { marginTop: space.sm }]}>
+        <Chip
+          label="You"
+          selected
+          onPress={() => toggle(meId)}
+          leading={<Avatar name={state.people[meId]?.name ?? 'You'} size={20} />}
+        />
+        {shownFriends.map((f) => (
+          <Chip
+            key={f.id}
+            label={f.name}
+            selected={members.includes(f.id)}
+            onPress={() => toggle(f.id)}
+            leading={<Avatar name={f.name} size={20} />}
+          />
+        ))}
+      </View>
+      {error ? <Text style={ui.error}>{error}</Text> : null}
       {mode === 'cloud' ? (
         <Text style={ui.hint}>
           {addNote ??
