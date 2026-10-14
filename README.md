@@ -60,12 +60,13 @@ Who sees what: you see a group only if you're in it (or once you're let in). A t
 
 ## Notifications
 
-You're notified when a friend adds, edits or deletes an expense you're in, records a payment or settle-up with you, adds you to a group, asks to join a group you created, lets you in, or accepts your invite. Notifications say what happened, never amounts ("Ravi added an expense in Goa trip").
+You're notified when a friend (not you) adds, edits or deletes an expense you're in, records a payment or settle-up with you, adds you to a group, asks to join a group you created, lets you in, or accepts your invite. Notifications say what happened, never amounts ("Ravi added an expense in Goa trip").
 
 - **In the app**: the bell on the home screen shows how many are new; tap it for the list. Tapping one opens the group or friend.
 - **On the phone, with the app closed**: Your profile → Notifications → **Turn on notifications** (the phone asks once). Works on Android (Chrome, best with the app installed) and on iPhone with iOS 16.4 or later, **only once the app is added to the Home Screen** and opened from there. Signing out turns them off on that phone.
+- **Check a phone**: bell → **Send a test**. It says whether the phone's push service accepted the test (then it's up to the phone's own settings), refused it (with a code to look into), or the phone's notification address had expired (renewed on the spot; tap again).
 
-Behind the scenes, the database records each notification and asks the small `send-push` function (in Supabase) to deliver it. Delivery uses the standard Web Push protocol and costs nothing.
+Behind the scenes, the database records each notification and asks the small `send-push` function (in Supabase) to deliver it. Delivery uses the standard Web Push protocol at high urgency (so Android doesn't hold them back while the phone is idle) and costs nothing. The function's logs in Supabase show what each push service answered.
 
 ## Look and feel
 
@@ -161,11 +162,12 @@ Free Supabase projects pause after about a week with no activity. The workflow i
 ```bash
 npx tsc --noEmit                 # type-check
 npx expo lint                    # lint
-npx vitest run                   # 71 tests: splits, payers, currencies, rounding, balances, summary,
-                                 # transfers, removing friends, database rows, screen addresses, messages
-python3 supabase/test_rls.py     # 147 checks of who can see and change what, join requests, notifications
-                                 # and friend removal (needs Postgres 16 on :5433)
-python3 supabase/test_upgrade.py # upgrading databases made with versions 1 and 3
+npx vitest run                   # 95 tests: splits, payers, currencies, rounding, balances, summary,
+                                 # transfers, removing friends, database rows, screen addresses, messages,
+                                 # dates, remarks, friend search
+python3 supabase/test_rls.py     # 220 checks of who can see and change what, join requests, notifications,
+                                 # test notifications and friend removal (needs Postgres 16 on :5433)
+python3 supabase/test_upgrade.py # upgrading databases made with versions 1, 3, 4 and 5
 # supabase/functions/send-push/test.mts: Web Push encryption and signing checked against the
 # reference libraries, and delivery through a local database (see the top of the file)
 ```

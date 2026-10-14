@@ -145,7 +145,25 @@ export function deletePushSubscription(endpoint: string): Promise<void> {
 
 /** Make the send-push function run now (it creates the push keys on its first run). */
 export async function runSendPush(): Promise<void> {
-  await supabase.functions.invoke('send-push', { body: {} });
+  const { error } = await supabase.functions.invoke('send-push', { body: {} });
+  if (error) throw new Error('The server couldn’t send notifications just now. Try again in a minute.');
+}
+
+/** A test notification to your own phones. */
+export function sendTestNotification(): Promise<void> {
+  return rpc<void>('send_test_notification', {});
+}
+
+export interface PushStatus {
+  registered: boolean;
+  /** What the phone's push service answered last time (201 = accepted; 0 = couldn't reach it). */
+  last_status?: number | null;
+  last_tried_at?: string | null;
+}
+
+/** Whether the server has this phone, and how the last notification to it went. */
+export function myPushStatus(endpoint: string): Promise<PushStatus> {
+  return rpc<PushStatus>('my_push_status', { p_endpoint: endpoint });
 }
 
 /** Your own person row, created the first time you sign in. */

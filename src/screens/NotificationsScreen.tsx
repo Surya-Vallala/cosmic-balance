@@ -29,7 +29,7 @@ export default function NotificationsScreen({ navigation }: ScreenProps<'Notific
 
   return (
     <Screen>
-      <PushCard hideWhenOn />
+      <PushCard compact />
       <View style={{ marginTop: space.lg }}>
         <IncomingFriendRequests />
         {notices.length === 0 ? (

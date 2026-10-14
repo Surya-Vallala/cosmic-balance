@@ -214,12 +214,16 @@ export async function sendOne(sub: Subscription, payload: object, keys: PushKeys
       'Content-Encoding': 'aes128gcm',
       'Content-Type': 'application/octet-stream',
       TTL: String(24 * 3600),
-      Urgency: 'normal',
+      // High: delivered straight away. With 'normal', Android holds them while
+      // the phone is idle (screen off, battery saver), sometimes for hours.
+      // Allowed because every message shows a notification.
+      Urgency: 'high',
     },
     body,
     signal: AbortSignal.timeout(10000),
   });
-  await res.body?.cancel();
+  if (res.ok || res.status === 404 || res.status === 410) await res.body?.cancel();
+  else console.error('send-push:', res.status, (await res.text().catch(() => '')).slice(0, 300)); // why it was refused
   return res.status;
 }
 
@@ -240,20 +244,28 @@ export async function deliver(env: Env): Promise<{ sent: number; gone: number; f
     for (let i = 0; i < jobs.length; i += 10) {
       await Promise.all(
         jobs.slice(i, i + 10).map(async ({ n, s }) => {
+          let status = 0; // 0: the push service couldn't be reached
           try {
-            const status = await sendOne(
+            status = await sendOne(
               s,
               { title: 'Cosmic Balance', body: n.body, tag: n.id, url: target(n), unread: n.unread },
               keys!,
             );
-            if (status === 404 || status === 410) {
-              counts.gone++;
-              await rpc('drop_push_subscription', { p_endpoint: s.endpoint });
-            } else if (status >= 200 && status < 300) counts.sent++;
-            else counts.failed++;
-          } catch {
-            counts.failed++;
+          } catch (e) {
+            console.error('send-push: could not reach', new URL(s.endpoint).host, e);
           }
+          if (status === 404 || status === 410) {
+            counts.gone++;
+            await rpc('drop_push_subscription', { p_endpoint: s.endpoint }).catch(() => {});
+            return;
+          }
+          if (status >= 200 && status < 300) counts.sent++;
+          else {
+            counts.failed++;
+            console.error('send-push: refused by', new URL(s.endpoint).host, status);
+          }
+          // So the app can say how the last one went (needs database version 6; harmless before).
+          await rpc('record_push_result', { p_endpoint: s.endpoint, p_status: status }).catch(() => {});
         }),
       );
     }

@@ -209,4 +209,27 @@ as_user('surya', 'insert into public.expenses (id, group_id, data) values (%s, n
 check(len(as_user('ravi', 'select * from public.expenses where group_id is null')) == 1, 'and expenses outside groups work')
 check(len(one('surya', 'select public.my_friend_code()')) == 12, 'and friend links work')
 
+# --- Version 5 (live now, with a phone signed up) to the current version ------------------
+V5_COMMIT = '221d8e5'
+v5 = subprocess.run(['git', '-C', HERE, 'show', f'{V5_COMMIT}:supabase/schema.sql'],
+                    check=True, capture_output=True, text=True).stdout
+with tempfile.NamedTemporaryFile('w', suffix='.sql', delete=False) as f:
+    f.write(v5)
+    v5_path = f.name
+conn.close()
+DB = 'ck_upgrade5'
+psql('postgres', '-c', f'drop database if exists {DB} with (force)', '-c', f'create database {DB}')
+psql(DB, '-f', os.path.join(HERE, 'test_stub.sql'))
+psql(DB, '-f', v5_path)
+conn = psycopg2.connect(dbname=DB, **PG)
+sign_up('surya')
+one('surya', 'select id from public.ensure_me(%s)', ('Surya',))
+ep = 'https://fcm.googleapis.com/fcm/send/surya-phone'
+as_user('surya', 'select public.save_push_subscription(%s, %s, %s)', (ep, 'BKey', 'auth1'))
+psql(DB, '-f', os.path.join(HERE, 'schema.sql'))
+check(True, 'the current schema.sql runs cleanly on top of version 5')
+check(one('surya', 'select public.my_push_status(%s)', (ep,))['registered'], 'phones signed up before are kept')
+as_user('surya', 'select public.send_test_notification()')
+check(one('surya', "select count(*) from public.notifications where kind = 'test'") == 1, 'and a test notification can be sent')
+
 print(f'\nAll {passed} upgrade checks passed.')

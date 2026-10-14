@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
-import { pushState, turnOffPush, turnOnPush, type PushState } from './push';
+import { pushState, testPush, turnOffPush, turnOnPush, type PushState, type TestResult } from './push';
 import { colors, fonts, radius, space } from './theme';
 import { Button } from './ui';
 
@@ -42,14 +42,44 @@ const COPY: Record<PushState, string> = {
   blocked:
     'Notifications are turned off for Cosmic Balance in your phone’s settings. Turn them on there (site or app settings → Notifications), then come back.',
   off: 'Get a notification when friends add expenses, record payments, add you to a group or ask to join yours. Amounts are never shown.',
-  on: 'This phone gets a notification when something concerns you. Amounts are never shown.',
+  on: 'This phone gets a notification when a friend adds or changes something that includes you (not for your own changes). Amounts are never shown.',
 };
+
+/** What the test found, in words. */
+function testText(r: TestResult): { text: string; good: boolean } {
+  switch (r.kind) {
+    case 'accepted':
+      return {
+        good: true,
+        text: 'Sent, and your phone’s push service accepted it. It should pop up in a few seconds. If it doesn’t, your phone is holding it back: in the phone’s Settings, allow notifications for Cosmic Balance (or for Chrome, if Cosmic Balance isn’t listed), and turn off battery saving for it.',
+      };
+    case 'renewed':
+      return {
+        good: true,
+        text: 'This phone’s notification address had expired, so it’s been renewed. Tap Send a test again.',
+      };
+    case 'refused':
+      return {
+        good: false,
+        text: `Your phone’s push service refused it (code ${r.status}). This needs fixing on the server: send this code to whoever set up Cosmic Balance.`,
+      };
+    case 'unreachable':
+      return { good: false, text: 'The server couldn’t reach your phone’s push service. Try again in a minute.' };
+    default:
+      return {
+        good: true,
+        text: 'Sent. If nothing pops up within a minute, allow notifications for Cosmic Balance in your phone’s Settings.',
+      };
+  }
+}
 
 /** Shows whether this phone gets notifications, with a button to turn them on or off. */
 export function PushCard({ compact = false, hideWhenOn = false }: { compact?: boolean; hideWhenOn?: boolean }) {
   const [state, setState] = useState<PushState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState<{ text: string; good: boolean } | null>(null);
 
   const check = useCallback(() => {
     pushState()
@@ -70,6 +100,17 @@ export function PushCard({ compact = false, hideWhenOn = false }: { compact?: bo
     }
     setBusy(false);
   };
+  const test = async () => {
+    setTesting(true);
+    setError(null);
+    setResult(null);
+    try {
+      setResult(testText(await testPush()));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Couldn’t send a test. Try again.');
+    }
+    setTesting(false);
+  };
   const off = async () => {
     setBusy(true);
     setError(null);
@@ -84,9 +125,25 @@ export function PushCard({ compact = false, hideWhenOn = false }: { compact?: bo
       {state === 'off' ? (
         <Button title={busy ? 'Turning on…' : 'Turn on notifications'} onPress={on} disabled={busy} style={{ marginTop: space.md }} />
       ) : null}
-      {state === 'on' && !compact ? (
-        <Button title={busy ? 'Turning off…' : 'Turn off on this phone'} variant="secondary" onPress={off} disabled={busy} style={{ marginTop: space.md }} />
+      {state === 'on' ? (
+        <View style={s.actions}>
+          <View style={{ flex: 1 }}>
+            <Button
+              title={testing ? 'Sending…' : 'Send a test'}
+              variant="secondary"
+              onPress={test}
+              disabled={testing || busy}
+              accessibilityLabel="Send a test notification to this phone"
+            />
+          </View>
+          {compact ? null : (
+            <View style={{ flex: 1 }}>
+              <Button title={busy ? 'Turning off…' : 'Turn off'} variant="ghost" onPress={off} disabled={busy || testing} accessibilityLabel="Turn off notifications on this phone" />
+            </View>
+          )}
+        </View>
       ) : null}
+      {result ? <Text style={[s.result, { color: result.good ? colors.owed : colors.owe }]}>{result.text}</Text> : null}
       {state === 'blocked' ? (
         <Button title="I’ve turned them on" variant="secondary" onPress={check} style={{ marginTop: space.md }} />
       ) : null}
@@ -122,4 +179,6 @@ const s = StyleSheet.create({
   title: { fontFamily: fonts.medium, fontSize: 15, color: colors.text },
   body: { fontSize: 13, color: colors.muted, marginTop: 4, lineHeight: 18 },
   error: { fontSize: 13, color: colors.owe, marginTop: space.sm, fontWeight: '600', lineHeight: 18 },
+  result: { fontSize: 13, marginTop: space.sm, lineHeight: 18 },
+  actions: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
 });

@@ -1,4 +1,4 @@
--- Cosmic Balance database (version 5)
+-- Cosmic Balance database (version 6)
 -- Run this in Supabase (SQL Editor → New query → paste → Run).
 -- It is safe to run again, and running the newest version upgrades a
 -- database set up with an older one: everything is created only if missing
@@ -176,6 +176,10 @@ create table if not exists public.push_subscriptions (
   created_at timestamptz not null default now()
 );
 create index if not exists push_subscriptions_user_idx on public.push_subscriptions (user_id);
+-- Added in version 6: what the phone's push service said to the last
+-- notification sent to it (201 = accepted), so the app can tell you.
+alter table public.push_subscriptions add column if not exists last_status int;
+alter table public.push_subscriptions add column if not exists last_tried_at timestamptz;
 
 -- The key pair push services use to check notifications come from us. Made
 -- by the send-push function the first time it runs; the private half never
@@ -1316,6 +1320,38 @@ returns void language sql security definer set search_path = public as $$
   delete from public.push_subscriptions where endpoint = p_endpoint;
 $$;
 
+-- What a phone's push service answered (send-push records it after each try).
+create or replace function public.record_push_result(p_endpoint text, p_status int)
+returns void language sql security definer set search_path = public as $$
+  update public.push_subscriptions set last_status = p_status, last_tried_at = now() where endpoint = p_endpoint;
+$$;
+
+-- A test notification to your own phones, to check they get them. Marked
+-- read, so it doesn't add to the count on the bell.
+create or replace function public.send_test_notification()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Not signed in';
+  end if;
+  if (select count(*) from public.notifications
+      where user_id = auth.uid() and kind = 'test' and created_at > now() - interval '10 minutes') >= 5 then
+    raise exception 'That''s a lot of tests. Wait a few minutes and try again.';
+  end if;
+  insert into public.notifications (user_id, kind, body, actor, read_at)
+  values (auth.uid(), 'test', 'Test notification: this phone gets Cosmic Balance notifications.', auth.uid(), now());
+end $$;
+
+-- Whether the server has this phone, and how the last notification to it went.
+create or replace function public.my_push_status(p_endpoint text)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select jsonb_build_object('registered', true, 'last_status', s.last_status, 'last_tried_at', s.last_tried_at)
+       from public.push_subscriptions s
+      where s.endpoint = p_endpoint and s.user_id = auth.uid()),
+    jsonb_build_object('registered', false));
+$$;
+
 -- What happened, for the people it concerns ----------------------------------
 
 create or replace function public.on_expense_change()
@@ -1506,10 +1542,10 @@ revoke all on function public.merge_person(uuid, uuid), public.person_for_accoun
   from public, anon, authenticated;
 -- Only the send-push function (with the project's secret key) uses these.
 revoke all on function public.push_keys_get(), public.push_keys_init(text, jsonb),
-  public.claim_push_batch(int), public.drop_push_subscription(text)
+  public.claim_push_batch(int), public.drop_push_subscription(text), public.record_push_result(text, int)
   from public, anon, authenticated;
 grant execute on function public.push_keys_get(), public.push_keys_init(text, jsonb),
-  public.claim_push_batch(int), public.drop_push_subscription(text)
+  public.claim_push_batch(int), public.drop_push_subscription(text), public.record_push_result(text, int)
   to service_role;
 revoke all on function public.my_person_id(), public.is_member(uuid), public.can_see_person(uuid),
   public.can_approve(uuid), public.speaks_for(uuid, uuid), public.expense_people(jsonb),
@@ -1521,7 +1557,8 @@ revoke all on function public.my_person_id(), public.is_member(uuid), public.can
   public.person_invite_codes(uuid[]), public.person_invite_preview(text), public.claim_person_invite(text),
   public.request_join(text), public.approve_join_request(uuid, uuid), public.decline_join_request(uuid),
   public.remove_friend(uuid), public.mark_notifications_read(),
-  public.save_push_subscription(text, text, text), public.delete_push_subscription(text), public.push_public_key()
+  public.save_push_subscription(text, text, text), public.delete_push_subscription(text), public.push_public_key(),
+  public.send_test_notification(), public.my_push_status(text)
   from public, anon;
 grant execute on function public.my_person_id(), public.is_member(uuid), public.can_see_person(uuid),
   public.can_approve(uuid), public.speaks_for(uuid, uuid), public.expense_people(jsonb),
@@ -1533,7 +1570,8 @@ grant execute on function public.my_person_id(), public.is_member(uuid), public.
   public.person_invite_codes(uuid[]), public.person_invite_preview(text), public.claim_person_invite(text),
   public.request_join(text), public.approve_join_request(uuid, uuid), public.decline_join_request(uuid),
   public.remove_friend(uuid), public.mark_notifications_read(),
-  public.save_push_subscription(text, text, text), public.delete_push_subscription(text), public.push_public_key()
+  public.save_push_subscription(text, text, text), public.delete_push_subscription(text), public.push_public_key(),
+  public.send_test_notification(), public.my_push_status(text)
   to authenticated;
 
 -- ---------------------------------------------------------------------------

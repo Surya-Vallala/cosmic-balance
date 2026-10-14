@@ -124,7 +124,7 @@ const server = http.createServer((req, res) => {
   req.on('data', (c) => chunks.push(c));
   req.on('end', () => {
     received.push({ headers: req.headers, body: Buffer.concat(chunks), path: req.url! });
-    res.writeHead(req.url === '/gone' ? 410 : 201).end();
+    res.writeHead(req.url === '/gone' ? 410 : req.url === '/refused' ? 403 : 201).end('reason here');
   });
 });
 await new Promise<void>((r) => server.listen(8799, r));
@@ -152,7 +152,17 @@ const first = JSON.parse(open(new Uint8Array(live[0].body), ph));
 ok(first.title === 'Cosmic Balance' && first.unread === 2 && first.url === '?s=Notifications', 'with a title, the unread count and where to go');
 const pubKey = psql('select public_key from public.push_keys');
 ok(live.every((r) => r.headers['content-encoding'] === 'aes128gcm' && String(r.headers.authorization).endsWith(`k=${pubKey}`) &&
-   r.headers.ttl === '86400'), 'requests carry the encryption, signature and lifetime headers push services need');
+   r.headers.ttl === '86400' && r.headers.urgency === 'high'),
+   'requests carry the encryption, signature, lifetime and high-urgency headers push services need');
+ok(psql("select last_status from public.push_subscriptions where endpoint like '%/live'") === '201',
+   'what the push service answered is recorded for the phone');
+psql(`insert into public.push_subscriptions (endpoint, user_id, p256dh, auth) values
+  ('http://localhost:8799/refused', '${user}', '${ph.sub.p256dh}', '${ph.sub.auth}')`);
+psql(`insert into public.notifications (user_id, kind, body) values ('${user}', 'test', 'Test')`);
+const refused = await deliver({ get: (n) => env.get(n) });
+ok(refused.failed === 1 && psql("select last_status from public.push_subscriptions where endpoint like '%/refused'") === '403',
+   'a refusal is counted and recorded with its code, and the phone is kept');
+psql("delete from public.push_subscriptions where endpoint like '%/refused'");
 const again = await deliver({ get: (n) => env.get(n) });
 ok(again.sent === 0 && psql('select public_key from public.push_keys') === pubKey, 'a second run sends nothing new and keeps the same keys');
 

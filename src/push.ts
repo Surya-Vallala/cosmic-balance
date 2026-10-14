@@ -5,7 +5,15 @@
 // permission once; after that, the database sends notifications through the
 // send-push function to this phone's push service.
 import { Platform } from 'react-native';
-import { deletePushSubscription, pushPublicKey, runSendPush, savePushSubscription } from './cloud/api';
+import {
+  deletePushSubscription,
+  myPushStatus,
+  pushPublicKey,
+  runSendPush,
+  savePushSubscription,
+  sendTestNotification,
+  type PushStatus,
+} from './cloud/api';
 
 export type PushState =
   | 'unsupported' // this browser can't do it
@@ -130,6 +138,53 @@ export async function refreshPushSubscription(): Promise<void> {
   if (sub && json?.keys?.p256dh && json.keys.auth) {
     await savePushSubscription(sub.endpoint, json.keys.p256dh, json.keys.auth).catch(() => {});
   }
+}
+
+export type TestResult =
+  | { kind: 'accepted' } // the phone's push service took it: it's up to the phone now
+  | { kind: 'refused'; status: number } // the push service said no
+  | { kind: 'unreachable' } // the server couldn't reach the push service
+  | { kind: 'renewed' } // this phone's notification address had expired; it's signed up again
+  | { kind: 'sent' }; // sent, but the server can't say how it went (older database)
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Send a test notification to this phone and find out what happened to it:
+ * whether the phone's push service accepted it, refused it, or the phone's
+ * address had expired (then it's renewed straight away).
+ */
+export async function testPush(): Promise<TestResult> {
+  if (!supported() || Notification.permission !== 'granted') throw new Error('Turn on notifications first.');
+  const reg = await registerServiceWorker();
+  const sub = await reg?.pushManager.getSubscription().catch(() => null);
+  const renew = async (): Promise<TestResult> => {
+    await sub?.unsubscribe().catch(() => {});
+    await turnOnPush();
+    return { kind: 'renewed' };
+  };
+  const json = sub?.toJSON();
+  if (!sub || !json?.keys?.p256dh || !json.keys.auth) return renew();
+  // Make sure the server has this phone, then note how the last one went.
+  await savePushSubscription(sub.endpoint, json.keys.p256dh, json.keys.auth);
+  const before = await myPushStatus(sub.endpoint).catch(() => null);
+  await sendTestNotification();
+  await runSendPush();
+  if (!before) return { kind: 'sent' };
+  // The database may have started the delivery too; give it a few seconds to record the answer.
+  let after: PushStatus | null = null;
+  for (let i = 0; i < 8; i++) {
+    after = await myPushStatus(sub.endpoint).catch(() => null);
+    if (!after?.registered || after.last_tried_at !== before.last_tried_at) break;
+    await wait(1000);
+  }
+  if (!after) return { kind: 'sent' };
+  if (!after.registered) return renew(); // the push service said this address is gone
+  if (after.last_tried_at === before.last_tried_at || after.last_status == null) return { kind: 'sent' };
+  const status = after.last_status;
+  if (status >= 200 && status < 300) return { kind: 'accepted' };
+  if (status === 0) return { kind: 'unreachable' };
+  return { kind: 'refused', status };
 }
 
 /** The number on the app icon (where the phone supports it). */

@@ -542,6 +542,36 @@ check(superuser('select count(*) from public.push_subscriptions')[0][0] == 1, 'y
 as_user(None, 'select public.drop_push_subscription(%s)', ('https://fcm.googleapis.com/fcm/send/abc',), role='service_role', fetch=False)
 check(superuser('select count(*) from public.push_subscriptions')[0][0] == 0, 'send-push drops phones that are gone')
 
+# Version 6: a test notification, and how the last one to each phone went.
+ep = 'https://fcm.googleapis.com/fcm/send/test-phone'
+check(one('nina', 'select public.my_push_status(%s)', (ep,)) == {'registered': False},
+      'a phone the server does not have shows as not registered')
+as_user('nina', 'select public.save_push_subscription(%s, %s, %s)', (ep, 'BKey', 'auth1'), fetch=False)
+st = one('nina', 'select public.my_push_status(%s)', (ep,))
+check(st['registered'] and st['last_status'] is None, 'once saved it is registered, with nothing sent yet')
+check(one('omar', 'select public.my_push_status(%s)', (ep,)) == {'registered': False},
+      'someone else cannot see your phone')
+check(fails('nina', 'select public.record_push_result(%s, %s)', (ep, 201)),
+      'the app cannot write delivery results')
+as_user(None, 'select public.record_push_result(%s, %s)', (ep, 201), role='service_role', fetch=False)
+st = one('nina', 'select public.my_push_status(%s)', (ep,))
+check(st['last_status'] == 201 and st['last_tried_at'], 'send-push records what the push service answered')
+superuser("delete from public.notifications where kind = 'test'")
+as_user('nina', 'select public.send_test_notification()', fetch=False)
+t = superuser("select user_id::text, actor::text, read_at is not null, pushed_at from public.notifications where kind = 'test'")
+check(len(t) == 1 and t[0][0] == U['nina'] and t[0][1] == U['nina'] and t[0][2] and t[0][3] is None,
+      'a test notification goes to yourself, waiting to be sent, already read (no bell count)')
+batch = as_user(None, 'select public.claim_push_batch(50)', role='service_role')[0][0]
+check([b['kind'] for b in batch] == ['test'] and batch[0]['subscriptions'][0]['endpoint'] == ep,
+      'send-push picks up the test for your phone')
+for _ in range(4):
+    as_user('nina', 'select public.send_test_notification()', fetch=False)
+check(fails('nina', 'select public.send_test_notification()'), 'at most 5 tests in 10 minutes')
+check(fails_anon('select public.send_test_notification()') and fails_anon("select public.my_push_status('x')"),
+      'signed-out visitors cannot send tests or check phones')
+superuser("delete from public.notifications where kind = 'test'")
+superuser('delete from public.push_subscriptions')
+
 # --- Only someone who speaks for a name can link an account to it --------------
 # Bob adds "Rafi" by name to a private group, and to a group shared with Amy.
 for n in ['bob', 'amy', 'amy2']:
