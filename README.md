@@ -19,6 +19,7 @@ There are two ways to use it:
 - **One or more payers**: if a bill was paid jointly (you paid ₹2,000 and Ravi paid ₹1,000), pick "Multiple people" and enter what each person paid. Everyone's share is owed to the payers in proportion to what they paid.
 - **Date of each expense and transfer**: today unless you change it (tap Date to pick another day from the phone's calendar).
 - **Remarks** on an expense (optional, up to 500 characters) to explain it. Shown in italics under the expense in lists, in full when you open it, and in the Note column of the export. Everyone who can see the expense sees its remarks; notifications never include them.
+- **Picking who's in a split**: **Select all** / **Clear all** above the list. Switching between Equally, Amounts, Percent and Shares keeps the same people, filled in with equal starting values (1 share each, equal percentages, equal amounts of the total). Friend pickers (an expense's With, Transfer money, a group's members) list the friends you pick most often first.
 - **Expenses** split four ways: equally (pick who shared), exact amounts, percentages, or shares (e.g. 2 for a couple, 1 for everyone else). Amounts are kept in paise, so splits always add up exactly.
 - **Several currencies per group**: a Thailand trip can use ₹ and ฿ together. The first currency is the group's main one; for each other currency the group sets one exchange rate (it starts at an approximate value and can be changed any time). Each expense is entered in the currency it was paid in, using the dropdown next to the amount.
 - **Balances** per group and per friend, in plain sentences ("Ravi pays you ₹450"). In multi-currency groups every balance is also shown in the other currencies ("or ฿156.79").
@@ -164,7 +165,7 @@ Free Supabase projects pause after about a week with no activity. The workflow i
 ```bash
 npx tsc --noEmit                 # type-check
 npx expo lint                    # lint
-npx vitest run                   # 102 tests: splits, payers, currencies, rounding, balances, summary,
+npx vitest run                   # 111 tests: splits, payers, currencies, rounding, balances, summary,
                                  # transfers, removing friends, database rows, screen addresses, messages,
                                  # dates, remarks, friend search, sorting, pictures
 python3 supabase/test_rls.py     # 235 checks of who can see and change what, join requests, notifications,

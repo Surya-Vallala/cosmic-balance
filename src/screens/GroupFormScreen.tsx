@@ -2,7 +2,7 @@ import React, { useLayoutEffect, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { resetInviteCode } from '../cloud/api';
 import { isEmail } from '../emails';
-import { groupNet } from '../logic';
+import { groupNet, regularsFirst } from '../logic';
 import { approxRate, currency, CURRENCY_CODES, parseNumber } from '../money';
 import type { ScreenProps } from '../navigation';
 import { filterFriends } from '../search';
@@ -50,9 +50,11 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
     navigation.setOptions({ title: existing ? 'Edit group' : 'New group' });
   }, [navigation, existing]);
 
-  const friends = Object.values(state.people)
-    .filter((p) => p.id !== meId && !p.requesting)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // The friends you split with most often first.
+  const friends = regularsFirst(
+    state,
+    Object.values(state.people).filter((p) => p.id !== meId && !p.requesting),
+  );
 
   // Typing in the add box also narrows the list (people already in stay in view).
   const shownFriends = filterFriends(friends, newFriend, members);

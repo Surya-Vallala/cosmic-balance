@@ -4,7 +4,7 @@
 // Each expense keeps the currency it was paid in. To work out who owes whom,
 // a group converts everything to its main currency at the rates the group set.
 
-import { formatMoney, parseNumber, parseRupees } from './money';
+import { formatMoney, paiseToInput, parseNumber, parseRupees } from './money';
 import type { AppState, CurrencyCode, Debt, Expense, Group, Id, Payment, SplitType, Totals, Transfer } from './types';
 
 /**
@@ -655,4 +655,76 @@ export function sortForHome<T extends { id: Id; name: string }>(
     if (by === 'balance') return size(b.id) - size(a.id) || recent(a, b) || byName(a, b);
     return recent(a, b) || byName(a, b);
   });
+}
+
+// ---------------------------------------------------------------------------
+// The split list on the expense form
+
+/**
+ * Who's in the split right now: the ticked people for Equally; for the other
+ * kinds, everyone with a value above zero.
+ */
+export function inSplit(splitType: SplitType, members: Id[], selected: Id[], inputs: Record<Id, string>): Id[] {
+  if (splitType === 'equal') return members.filter((m) => selected.includes(m));
+  return members.filter((m) => {
+    const raw = (inputs[m] ?? '').trim();
+    const v = raw === '' ? 0 : splitType === 'exact' ? parseRupees(raw) : parseNumber(raw);
+    return v !== null && v > 0;
+  });
+}
+
+/**
+ * Starting values for these people when switching to another kind of split:
+ * 1 share each, equal percentages (adding up to 100), or equal amounts
+ * (adding up to the total, when there is one). Everyone else starts blank.
+ */
+export function startingInputs(splitType: SplitType, people: Id[], amount: number | null): Record<Id, string> {
+  if (people.length === 0 || splitType === 'equal') return {};
+  if (splitType === 'shares') return Object.fromEntries(people.map((m) => [m, '1']));
+  if (splitType === 'percent') {
+    const each = Math.floor(10000 / people.length) / 100;
+    const first = Math.round((100 - each * (people.length - 1)) * 100) / 100;
+    return Object.fromEntries(people.map((m, i) => [m, String(i === 0 ? first : each)]));
+  }
+  if (!amount || amount <= 0) return {};
+  const parts = allocate(amount, people.map(() => 1));
+  return Object.fromEntries(people.map((m, i) => [m, paiseToInput(parts[i])]));
+}
+
+/**
+ * How often you've picked each friend: the expenses you're both in plus the
+ * money given between you. For putting regulars first in pickers.
+ */
+export function pickCounts(meId: Id, expenses: Expense[], transfers: Transfer[]): Record<Id, number> {
+  const out: Record<Id, number> = {};
+  for (const e of expenses) {
+    const people = expensePeople(e);
+    if (!people.includes(meId)) continue;
+    for (const id of people) if (id !== meId) out[id] = (out[id] ?? 0) + 1;
+  }
+  for (const t of transfers) {
+    const other = t.from === meId ? t.to : t.to === meId ? t.from : null;
+    if (other) out[other] = (out[other] ?? 0) + 1;
+  }
+  return out;
+}
+
+/** Friends you pick most often first; then the most recent; then by name. */
+export function mostPickedFirst<T extends { id: Id; name: string }>(
+  people: T[],
+  counts: Record<Id, number>,
+  last: Record<Id, string> = {},
+): T[] {
+  return [...people].sort(
+    (a, b) =>
+      (counts[b.id] ?? 0) - (counts[a.id] ?? 0) ||
+      (last[b.id] ?? '').localeCompare(last[a.id] ?? '') ||
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+  );
+}
+
+/** Friends in picker order for this state: regulars first. */
+export function regularsFirst<T extends { id: Id; name: string }>(s: AppState, people: T[]): T[] {
+  if (!s.meId) return people;
+  return mostPickedFirst(people, pickCounts(s.meId, s.expenses, s.transfers), lastFriendActivity(s.meId, s.expenses, s.payments, s.transfers));
 }

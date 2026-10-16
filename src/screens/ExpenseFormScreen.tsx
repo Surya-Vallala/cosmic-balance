@@ -1,7 +1,16 @@
 import React, { useLayoutEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { fromDay, toDay } from '../dates';
-import { computePayers, computeSplit, expensePeople, groupCurrencies, toBase } from '../logic';
+import {
+  computePayers,
+  computeSplit,
+  expensePeople,
+  groupCurrencies,
+  inSplit,
+  regularsFirst,
+  startingInputs,
+  toBase,
+} from '../logic';
 import { CURRENCY_CODES, formatMoney, paiseToInput, parseRupees } from '../money';
 import type { ScreenProps } from '../navigation';
 import { filterFriends, SEARCH_FROM } from '../search';
@@ -46,9 +55,11 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
   const groupId = existing ? existing.groupId : route.params.groupId ?? null;
   const group = groupId ? state.groups.find((g) => g.id === groupId) : undefined;
   const outside = !groupId;
-  const friends = Object.values(state.people)
-    .filter((p) => p.id !== meId && !p.requesting)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // The friends you split with most often first.
+  const friends = regularsFirst(
+    state,
+    Object.values(state.people).filter((p) => p.id !== meId && !p.requesting),
+  );
   const [withIds, setWithIds] = useState<string[]>(() =>
     existing && outside
       ? expensePeople(existing).filter((id) => id !== meId)
@@ -110,15 +121,23 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
     }
   };
 
+  // Who's in the split now (ticked, or given a value), so a switch keeps the same people.
+  const included = inSplit(splitType, members, selected, inputs);
   const switchType = (t: SplitType) => {
+    if (t === splitType) return;
+    const people = included.length ? included : members;
     setSplitType(t);
-    // Pre-fill sensible starting values so the user only adjusts.
-    if (t === 'shares') setInputs(Object.fromEntries(members.map((m) => [m, '1'])));
-    else if (t === 'percent') {
-      const each = Math.floor(10000 / members.length) / 100;
-      const vals = members.map((_, i) => (i === 0 ? +(100 - each * (members.length - 1)).toFixed(2) : each));
-      setInputs(Object.fromEntries(members.map((m, i) => [m, String(vals[i])])));
-    } else if (t === 'exact') setInputs({});
+    // Start the same people off with sensible values, so the user only adjusts.
+    if (t === 'equal') setSelected(people);
+    else setInputs(startingInputs(t, people, amount));
+  };
+  const selectAll = () => {
+    if (splitType === 'equal') setSelected(members);
+    else setInputs(startingInputs(splitType, members, amount));
+  };
+  const clearAll = () => {
+    if (splitType === 'equal') setSelected([]);
+    else setInputs({});
   };
 
   const descError = touched && !description.trim() ? 'Say what this was for.' : null;
@@ -293,7 +312,31 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
           { value: 'shares', label: 'Shares' },
         ]}
       />
-      <Text style={[ui.hint, { marginBottom: space.md }]}>{splitHelp[splitType]}</Text>
+      <Text style={[ui.hint, { marginBottom: space.sm }]}>{splitHelp[splitType]}</Text>
+
+      <View style={s.allRow}>
+        <Text style={s.allCount}>
+          {included.length} of {members.length} in this split
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Select everyone"
+          disabled={included.length === members.length}
+          onPress={selectAll}
+          hitSlop={8}
+        >
+          <Text style={[s.allLink, included.length === members.length && s.allLinkOff]}>Select all</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Clear everyone"
+          disabled={included.length === 0}
+          onPress={clearAll}
+          hitSlop={8}
+        >
+          <Text style={[s.allLink, included.length === 0 && s.allLinkOff]}>Clear all</Text>
+        </Pressable>
+      </View>
 
       <List>
         {members.map((m, i) => {
@@ -306,6 +349,8 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
                 key={m}
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: on }}
+                aria-checked={on}
+                accessibilityLabel={nameOf(m)}
                 onPress={() => setSelected(on ? selected.filter((x) => x !== m) : [...selected, m])}
                 style={[s.memberRow, !last && s.divider]}
               >
@@ -436,5 +481,9 @@ const s = StyleSheet.create({
   prefix: { fontSize: 15, color: colors.muted, marginRight: 6 },
   suffix: { fontSize: 13, color: colors.muted, marginLeft: 6, width: 42 },
   status: { fontSize: 14, fontWeight: '600', marginTop: space.md, marginHorizontal: space.xs },
+  allRow: { flexDirection: 'row', alignItems: 'center', gap: space.lg, marginBottom: space.sm, marginHorizontal: space.xs },
+  allCount: { flex: 1, fontSize: 12, color: colors.muted },
+  allLink: { fontSize: 13, fontWeight: '600', color: colors.star },
+  allLinkOff: { color: colors.placeholder },
   remarks: { minHeight: 84, textAlignVertical: 'top', lineHeight: 22 },
 });

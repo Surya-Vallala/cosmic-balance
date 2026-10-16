@@ -1,6 +1,7 @@
 import React, { useLayoutEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { fromDay, relativeDay, toDay } from '../dates';
+import { regularsFirst } from '../logic';
 import { CURRENCY_CODES, formatMoney, paiseToInput, parseRupees } from '../money';
 import type { ScreenProps } from '../navigation';
 import { filterFriends, SEARCH_FROM } from '../search';
@@ -30,11 +31,13 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
   const meId = state.meId!;
   const existing = state.transfers.find((t) => t.id === route.params.transferId);
 
+  // You, then the friends you give money to (or split with) most often.
   const people = [
     meId,
-    ...Object.keys(state.people)
-      .filter((id) => id !== meId && !state.people[id].requesting)
-      .sort((a, b) => nameOf(a).localeCompare(nameOf(b))),
+    ...regularsFirst(
+      state,
+      Object.values(state.people).filter((p) => p.id !== meId && !p.requesting),
+    ).map((p) => p.id),
   ];
   const firstFriend = people.find((id) => id !== meId) ?? '';
 

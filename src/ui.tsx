@@ -536,6 +536,8 @@ export function Chip({ label, selected, onPress, leading }: { label: string; sel
     <Pressable
       accessibilityRole="button"
       accessibilityState={{ selected }}
+      aria-selected={selected}
+      accessibilityLabel={label}
       onPress={onPress}
       style={[styles.chip, selected && styles.chipOn]}
     >
