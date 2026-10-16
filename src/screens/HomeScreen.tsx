@@ -164,7 +164,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
               onPress={() => navigation.navigate('FriendForm', { personId: meId })}
               hitSlop={8}
             >
-              <Avatar name={me?.name ?? '?'} size={28} />
+              <Avatar id={meId} name={me?.name ?? '?'} size={28} />
             </Pressable>
           </View>
         </View>
@@ -287,7 +287,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                   {shown.map((p, i) => (
                     <Row
                       key={p.id}
-                      left={<Avatar name={p.name} size={LIST_ICON} />}
+                      left={<Avatar id={p.id} name={p.name} size={LIST_ICON} />}
                       title={p.name}
                       subtitle={
                         mode === 'cloud' && !p.userId

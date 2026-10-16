@@ -164,7 +164,7 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
               const p = state.people[r.personId];
               return (
                 <View key={r.id} style={[s.debtRow, i < requests.length - 1 && s.divider]}>
-                  <Avatar name={p?.name ?? '?'} size={32} />
+                  <Avatar id={r.personId} name={p?.name ?? '?'} size={32} />
                   <View style={{ flex: 1, marginLeft: space.md, marginRight: space.sm }}>
                     <Text style={s.debtText}>{p?.name ?? 'Someone'}</Text>
                     <Text style={s.waitingNote}>{busy === r.id ? 'Saving…' : p?.email ?? 'Opened the group’s link'}</Text>
@@ -202,7 +202,7 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
           <List>
             {waiting.map((p, i) => (
               <View key={p.id} style={[s.debtRow, i < waiting.length - 1 && s.divider]}>
-                <Avatar name={p.name} size={32} />
+                <Avatar id={p.id} name={p.name} size={32} />
                 <View style={{ flex: 1, marginLeft: space.md, marginRight: space.sm }}>
                   <Text style={s.debtText}>{p.name}</Text>
                   <Text style={s.waitingNote}>
@@ -301,7 +301,7 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
             {claimable.map((p) => (
               <Row
                 key={p.id}
-                left={<Avatar name={p.name} size={36} />}
+                left={<Avatar id={p.id} name={p.name} size={36} />}
                 title={`They’re ${p.name}`}
                 onPress={() => approving && decide(approving, true, p.id)}
               />

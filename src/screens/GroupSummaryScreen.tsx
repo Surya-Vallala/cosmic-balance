@@ -99,7 +99,7 @@ export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'G
               const tone = d.from === meId ? colors.owe : d.to === meId ? colors.owed : colors.textSoft;
               return (
                 <View key={`${d.from}-${d.to}`} style={[s.personRow, i < debts.length - 1 && s.divider]}>
-                  <Avatar name={name(d.from)} size={26} />
+                  <Avatar id={d.from} name={name(d.from)} size={26} />
                   <View style={{ flex: 1, marginLeft: space.md }}>
                     <Text style={s.personName}>{text}</Text>
                     <Text style={[s.debtAmount, { color: tone }]}>{show(d.amount)}</Text>
@@ -155,7 +155,7 @@ export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'G
       <List>
         {members.map((m, i) => (
           <View key={m.id} style={[s.personRow, i < members.length - 1 && s.divider]}>
-            <Avatar name={name(m.id)} size={26} />
+            <Avatar id={m.id} name={name(m.id)} size={26} />
             <View style={{ flex: 1, marginLeft: space.md, minWidth: 0 }}>
               <Text style={s.personName}>{nameOf(m.id)}</Text>
               <View style={s.stats}>

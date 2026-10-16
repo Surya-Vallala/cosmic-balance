@@ -1,4 +1,4 @@
--- Cosmic Balance database (version 6)
+-- Cosmic Balance database (version 7)
 -- Run this in Supabase (SQL Editor → New query → paste → Run).
 -- It is safe to run again, and running the newest version upgrades a
 -- database set up with an older one: everything is created only if missing
@@ -25,6 +25,8 @@
 --   notifications  what happened that concerns you (no amounts), shown in
 --              the app and sent to your phones.
 --   push_subscriptions  the phones that asked for notifications.
+--   avatars    profile pictures: each person sets their own (a small square
+--              JPEG), seen by everyone who can see that person.
 --
 -- Security: row level security on every table. You see a group only if you
 -- are a member, and its expenses and payments with it. You see people who
@@ -180,6 +182,14 @@ create index if not exists push_subscriptions_user_idx on public.push_subscripti
 -- notification sent to it (201 = accepted), so the app can tell you.
 alter table public.push_subscriptions add column if not exists last_status int;
 alter table public.push_subscriptions add column if not exists last_tried_at timestamptz;
+
+-- Added in version 7: profile pictures. Each person sets only their own,
+-- through set_my_photo. Small (about 15 KB), so they're kept right here.
+create table if not exists public.avatars (
+  person_id uuid primary key references public.people (id) on delete cascade,
+  image text not null check (char_length(image) <= 60000 and image like 'data:image/jpeg;base64,%'),
+  updated_at timestamptz not null default now()
+);
 
 -- The key pair push services use to check notifications come from us. Made
 -- by the send-push function the first time it runs; the private half never
@@ -379,6 +389,12 @@ alter table public.notifications enable row level security;
 alter table public.push_subscriptions enable row level security; -- no policies: functions only
 alter table public.push_keys enable row level security;          -- no policies: functions only
 alter table public.app_settings enable row level security;       -- no policies: functions only
+alter table public.avatars enable row level security;
+
+-- A profile picture is seen by whoever can see that person.
+drop policy if exists avatars_select on public.avatars;
+create policy avatars_select on public.avatars for select to authenticated
+  using (public.can_see_person(person_id));
 
 -- You see your own requests, and requests to join groups you let people into.
 drop policy if exists join_requests_select on public.join_requests;
@@ -482,6 +498,8 @@ revoke insert, update, delete, truncate on public.join_requests, public.notifica
 revoke all on public.push_subscriptions, public.push_keys, public.app_settings from anon, authenticated;
 revoke all on public.friend_links from anon, authenticated;
 revoke insert, update, delete, truncate on public.friend_requests from anon, authenticated;
+revoke insert, update, delete, truncate on public.avatars from anon, authenticated;
+revoke all on public.avatars from anon;
 
 -- ---------------------------------------------------------------------------
 -- Internal functions (not callable from the app)
@@ -1320,6 +1338,29 @@ returns void language sql security definer set search_path = public as $$
   delete from public.push_subscriptions where endpoint = p_endpoint;
 $$;
 
+-- Your own profile picture: a small square JPEG as a data URL, or null to
+-- remove it. Returns when it was saved.
+create or replace function public.set_my_photo(p_image text)
+returns timestamptz language plpgsql security definer set search_path = public as $$
+declare
+  me uuid := public.my_person_id();
+  at timestamptz := clock_timestamp();
+begin
+  if auth.uid() is null or me is null then
+    raise exception 'Not signed in';
+  end if;
+  if p_image is null then
+    delete from public.avatars where person_id = me;
+    return null;
+  end if;
+  if char_length(p_image) > 60000 or p_image !~ '^data:image/jpeg;base64,[A-Za-z0-9+/]+=*$' then
+    raise exception 'That picture can''t be used. Try another one.';
+  end if;
+  insert into public.avatars (person_id, image, updated_at) values (me, p_image, at)
+  on conflict (person_id) do update set image = excluded.image, updated_at = excluded.updated_at;
+  return at;
+end $$;
+
 -- What a phone's push service answered (send-push records it after each try).
 create or replace function public.record_push_result(p_endpoint text, p_status int)
 returns void language sql security definer set search_path = public as $$
@@ -1558,7 +1599,7 @@ revoke all on function public.my_person_id(), public.is_member(uuid), public.can
   public.request_join(text), public.approve_join_request(uuid, uuid), public.decline_join_request(uuid),
   public.remove_friend(uuid), public.mark_notifications_read(),
   public.save_push_subscription(text, text, text), public.delete_push_subscription(text), public.push_public_key(),
-  public.send_test_notification(), public.my_push_status(text)
+  public.send_test_notification(), public.my_push_status(text), public.set_my_photo(text)
   from public, anon;
 grant execute on function public.my_person_id(), public.is_member(uuid), public.can_see_person(uuid),
   public.can_approve(uuid), public.speaks_for(uuid, uuid), public.expense_people(jsonb),
@@ -1571,7 +1612,7 @@ grant execute on function public.my_person_id(), public.is_member(uuid), public.
   public.request_join(text), public.approve_join_request(uuid, uuid), public.decline_join_request(uuid),
   public.remove_friend(uuid), public.mark_notifications_read(),
   public.save_push_subscription(text, text, text), public.delete_push_subscription(text), public.push_public_key(),
-  public.send_test_notification(), public.my_push_status(text)
+  public.send_test_notification(), public.my_push_status(text), public.set_my_photo(text)
   to authenticated;
 
 -- ---------------------------------------------------------------------------
@@ -1619,7 +1660,7 @@ declare t text;
 begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     foreach t in array array['people', 'groups', 'expenses', 'payments', 'transfers', 'join_requests', 'notifications',
-                             'friend_requests'] loop
+                             'friend_requests', 'avatars'] loop
       if not exists (select 1 from pg_publication_tables
                      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t) then
         execute format('alter publication supabase_realtime add table public.%I', t);

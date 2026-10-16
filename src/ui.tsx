@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import {
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -16,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BlackHole } from './cosmos';
 import { dayLabel, toDay } from './dates';
 import { fromBase, groupCurrencies } from './logic';
+import { PhotoContext } from './photos';
 import { currency, formatMoney } from './money';
 import { colors, fonts, radius, space, tintFor } from './theme';
 import type { CurrencyCode, Group, Totals } from './types';
@@ -218,7 +220,19 @@ export function GroupBadge({ name, size = 40 }: { name: string; size?: number })
   );
 }
 
-export function Avatar({ name, size = 40 }: { id?: string; name: string; size?: number }) {
+/** A person's picture, or their initials on a planet colour. Pass `id` so their picture can show. */
+export function Avatar({ id, name, size = 40, photo }: { id?: string; name: string; size?: number; photo?: string | null }) {
+  const photos = useContext(PhotoContext);
+  const image = photo !== undefined ? photo : id ? photos[id]?.image : undefined;
+  if (image) {
+    return (
+      <Image
+        source={{ uri: image }}
+        accessibilityIgnoresInvertColors
+        style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors.raised }}
+      />
+    );
+  }
   const initials = name
     .split(/\s+/)
     .filter(Boolean)

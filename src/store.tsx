@@ -7,17 +7,20 @@ import {
   applyOps,
   CloudError,
   ensureMe,
+  fetchPhotos,
   fetchRows,
   markNotificationsRead,
   personInviteCodes,
+  setMyPhoto as apiSetMyPhoto,
   setPersonEmail as apiSetPersonEmail,
   subscribe,
 } from './cloud/api';
 import { actionToOps, personFromRow, rowsToState, type Op } from './cloud/sync';
 import { expensePeople } from './logic';
 import { formatMoney } from './money';
+import { PhotoContext, syncPhotos } from './photos';
 import { refreshPushSubscription, setBadge } from './push';
-import type { Activity, AppState, Expense, Group, Id, Payment, Person, Transfer } from './types';
+import type { Activity, AppState, Expense, Group, Id, Payment, Person, Photo, Transfer } from './types';
 
 // Storage keys keep the app's earlier name, so nothing saved on phones is lost.
 const STORAGE_KEY = 'cosmic-khaata:v1';
@@ -62,6 +65,8 @@ export type Action =
   | { type: 'deleteTransfer'; id: Id }
   | { type: 'settleOverall'; settlement: Transfer; payments: Payment[] }
   | { type: 'removeFriend'; id: Id }
+  /** A profile picture (your own); null removes it. Kept on the phone; the server is told separately. */
+  | { type: 'setPhoto'; id: Id; image: string | null; at?: string }
   | { type: 'reset' };
 
 function nameOf(s: AppState, id: Id) {
@@ -231,10 +236,18 @@ function reducer(s: AppState, a: Action): AppState {
         activity: log(s, `You removed ${p.name} from your friends`),
       };
     }
+    case 'setPhoto': {
+      const photos = { ...(s.photos ?? {}) };
+      if (a.image) photos[a.id] = { image: a.image, at: a.at ?? new Date().toISOString() };
+      else delete photos[a.id];
+      return { ...s, photos };
+    }
     case 'reset':
       return emptyState;
   }
 }
+
+const NO_PHOTOS: Record<Id, Photo> = {};
 
 interface Store {
   state: AppState;
@@ -264,6 +277,8 @@ interface Store {
   inviteCodes: (personIds: Id[]) => Promise<Record<Id, string>>;
   /** Shared mode: you've seen your notifications. */
   markNoticesRead: () => void;
+  /** Set or (with null) remove your own profile picture. */
+  setMyPhoto: (image: string | null) => Promise<void>;
 }
 
 const StoreContext = createContext<Store | null>(null);
@@ -392,7 +407,10 @@ export function StoreProvider({
         if (seq !== fetchSeq.current) return; // a newer fetch is on its way
         // If a write landed while fetching, this copy may be missing it: fetch again.
         if (writesDone.current !== writesBefore && attempt < 2) continue;
-        replaceState(withPending(rowsToState(rows, meIdRef.current), pending.current));
+        // Pictures: only the ones that changed are downloaded.
+        const photos = await syncPhotos(rows.avatars, stateRef.current.photos, fetchPhotos);
+        if (seq !== fetchSeq.current) return;
+        replaceState(withPending({ ...rowsToState(rows, meIdRef.current), photos }, pending.current));
         break;
       }
       setLoadError(null);
@@ -640,6 +658,20 @@ export function StoreProvider({
     [whenSaved],
   );
 
+  const setMyPhoto = useCallback(
+    async (image: string | null) => {
+      const me = stateRef.current.meId;
+      if (!me) return;
+      if (mode !== 'cloud') {
+        dispatch({ type: 'setPhoto', id: me, image });
+        return;
+      }
+      const at = await apiSetMyPhoto(image).catch(needOnline);
+      replaceState(reducer(stateRef.current, { type: 'setPhoto', id: me, image, at: at ?? undefined }));
+    },
+    [mode, dispatch, replaceState],
+  );
+
   const value = useMemo(
     () => ({
       state,
@@ -658,6 +690,7 @@ export function StoreProvider({
       setPersonEmail,
       inviteCodes,
       markNoticesRead,
+      setMyPhoto,
     }),
     [
       state,
@@ -675,9 +708,14 @@ export function StoreProvider({
       setPersonEmail,
       inviteCodes,
       markNoticesRead,
+      setMyPhoto,
     ],
   );
-  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
+  return (
+    <StoreContext.Provider value={value}>
+      <PhotoContext.Provider value={state.photos ?? NO_PHOTOS}>{children}</PhotoContext.Provider>
+    </StoreContext.Provider>
+  );
 }
 
 export function useStore() {

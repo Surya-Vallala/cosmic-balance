@@ -147,7 +147,7 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
           label={nameOf(id)}
           selected={value === id}
           onPress={() => onChange(id)}
-          leading={<Avatar name={state.people[id]?.name ?? '?'} size={20} />}
+          leading={<Avatar id={id} name={state.people[id]?.name ?? '?'} size={20} />}
         />
       ))}
     </View>

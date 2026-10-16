@@ -844,8 +844,38 @@ check(new_code != code_a and one('ob', 'select public.friend_link_preview(%s)', 
 check(fails('od', 'select * from public.friend_links') and fails('od', 'insert into public.friend_requests (from_person, to_user) values (%s, %s)', (me_od, U['ob'])),
       'friend links and requests cannot be read or written directly')
 
+# --- Profile pictures (version 7) -------------------------------------------------------
+pic = 'data:image/jpeg;base64,' + 'A' * 400 + '=='
+me_surya = one('surya', 'select public.my_person_id()')
+check(one('surya', 'select public.set_my_photo(%s)', (pic,)) is not None, 'you can set your own picture')
+check(one('surya', 'select image from public.avatars where person_id = %s', (me_surya,)) == pic, 'you see it')
+check(one('ravi', 'select count(*) from public.avatars where person_id = %s', (me_surya,)) == 1,
+      'friends in a group with you see it')
+sign_up('loner')
+one('loner', 'select id from public.ensure_me(%s)', ('Loner',))
+check(one('loner', 'select count(*) from public.people where id = %s', (me_surya,)) == 0 and
+      one('loner', 'select count(*) from public.avatars') == 0, 'someone who cannot see you cannot see your picture')
+check(fails_anon('select * from public.avatars'), 'signed-out visitors cannot read pictures')
+check(fails('ravi', 'insert into public.avatars (person_id, image) values (%s, %s)', (me_surya, pic)) and
+      fails('ravi', 'update public.avatars set image = %s', (pic,)) and
+      fails('ravi', 'delete from public.avatars'), 'nobody can write pictures directly (not even someone else’s)')
+check(one('surya', 'select count(*) from public.avatars where person_id = %s', (me_surya,)) == 1, 'so your picture is untouched')
+for bad, why in [('data:image/png;base64,AAAA', 'not a JPEG'), ('data:image/jpeg;base64,AA"><script>', 'not base64'),
+                 ('data:image/jpeg;base64,' + 'A' * 70000, 'too big'), ('https://evil.example/x.jpg', 'a link')]:
+    check(fails('surya', 'select public.set_my_photo(%s)', (bad,)), f'a picture that is {why} is refused')
+pic2 = 'data:image/jpeg;base64,' + 'B' * 400
+first = one('ravi', 'select updated_at from public.avatars where person_id = %s', (me_surya,))
+one('surya', 'select public.set_my_photo(%s)', (pic2,))
+row = as_user('ravi', 'select image, updated_at from public.avatars where person_id = %s', (me_surya,))[0]
+check(row[0] == pic2 and row[1] > first, 'changing it replaces it, with a newer time (so phones fetch it again)')
+check(fails_anon("select public.set_my_photo('x')"), 'signed-out visitors cannot set pictures')
+one('surya', 'select public.set_my_photo(null)')
+check(one('surya', 'select count(*) from public.avatars') == 0, 'and you can remove it')
+one('surya', 'select public.set_my_photo(%s)', (pic,))
+
 # --- Group deletion by creator cascades ----------------------------------------------
 as_user('surya', 'delete from public.groups where id = %s', (g,), fetch=False)
 check(len(as_user('surya', 'select * from public.expenses')) == 0, 'deleting a group removes its expenses')
+check(one('surya', 'select count(*) from public.avatars') == 1, 'your picture stays with you')
 
 print(f'\nAll {passed} checks passed.')

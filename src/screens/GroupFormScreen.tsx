@@ -244,7 +244,7 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
           label="You"
           selected
           onPress={() => toggle(meId)}
-          leading={<Avatar name={state.people[meId]?.name ?? 'You'} size={20} />}
+          leading={<Avatar id={meId} name={state.people[meId]?.name ?? 'You'} size={20} />}
         />
         {shownFriends.map((f) => (
           <Chip
@@ -252,7 +252,7 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
             label={f.name}
             selected={members.includes(f.id)}
             onPress={() => toggle(f.id)}
-            leading={<Avatar name={f.name} size={20} />}
+            leading={<Avatar id={f.id} name={f.name} size={20} />}
           />
         ))}
       </View>

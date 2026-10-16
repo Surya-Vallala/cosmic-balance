@@ -79,6 +79,8 @@ export interface Rows {
   /** Your friends list (person ids). */
   contacts?: { person_id: string }[];
   friend_requests?: { id: string; from_person: string; to_user: string; created_at: string }[];
+  /** Who has a profile picture, and when it was last set (version 7). */
+  avatars?: { person_id: string; updated_at: string }[];
 }
 
 export function personFromRow(p: PersonRow): Person {

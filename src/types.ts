@@ -147,6 +147,12 @@ export interface JoinRequest {
   createdAt: string;
 }
 
+/** A profile picture: a small square JPEG (data URL), and when it was set. */
+export interface Photo {
+  image: string;
+  at: string;
+}
+
 export interface AppState {
   version: 1;
   meId: Id | null;
@@ -162,6 +168,8 @@ export interface AppState {
   joinRequests?: JoinRequest[];
   /** Shared mode only: friend requests sent to you, and ones you sent. */
   friendRequests?: FriendRequest[];
+  /** Profile pictures by person id (each person sets their own). */
+  photos?: Record<Id, Photo>;
 }
 
 export interface Debt {

@@ -6,6 +6,7 @@ import { exportCsv } from '../export';
 import type { ScreenProps } from '../navigation';
 import { MyFriendLink } from '../friend-requests';
 import { PushCard } from '../notify-ui';
+import { canPickPhoto, PhotoFramer, pickPhoto } from '../photo-picker';
 import { uid, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import { Avatar, Button, ConfirmButton, Field, List, Row, Screen, SectionTitle, styles as ui } from '../ui';
@@ -13,7 +14,7 @@ import { Avatar, Button, ConfirmButton, Field, List, Row, Screen, SectionTitle, 
 const UPI_PATTERN = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$/;
 
 export default function FriendFormScreen({ navigation, route }: ScreenProps<'FriendForm'>) {
-  const { state, dispatch, mode, email, addPersonByEmail, setPersonEmail, unsaved } = useStore();
+  const { state, dispatch, mode, email, addPersonByEmail, setPersonEmail, unsaved, setMyPhoto } = useStore();
   const { signOut, backToWelcome } = useAuth();
   const existing = route.params.personId ? state.people[route.params.personId] : undefined;
   const isMe = existing?.id === state.meId;
@@ -29,6 +30,11 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
   const [gmail, setGmail] = useState(existing?.email ?? '');
   const [busy, setBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Your picture: the file picked from the gallery, while it's being framed.
+  const [picked, setPicked] = useState<string | null>(null);
+  const [photoNote, setPhotoNote] = useState<string | null>(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const hasPhoto = !!(existing && state.photos?.[existing.id]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -98,7 +104,7 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
     return (
       <Screen>
         <View style={s.readHead}>
-          <Avatar name={existing.name} size={72} />
+          <Avatar id={existing.id} name={existing.name} size={72} />
           <Text style={s.readName}>{existing.name}</Text>
           {existing.email ? <Text style={s.readUpi}>{existing.email}</Text> : null}
           {existing.upiId ? <Text style={s.readUpi}>UPI: {existing.upiId}</Text> : null}
@@ -116,6 +122,59 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
         <Button title={busy ? 'Saving…' : existing ? 'Save changes' : 'Add friend'} onPress={save} disabled={busy} />
       }
     >
+      {isMe && existing ? (
+        <View style={s.photoHead}>
+          <Avatar id={existing.id} name={name.trim() || existing.name} size={84} />
+          {canPickPhoto ? (
+            <View style={s.photoButtons}>
+              <Button
+                small
+                title={hasPhoto ? 'Change picture' : 'Add a picture'}
+                variant="secondary"
+                disabled={photoBusy}
+                onPress={() => {
+                  setPhotoNote(null);
+                  pickPhoto().then((src) => src && setPicked(src));
+                }}
+              />
+              {hasPhoto ? (
+                <Button
+                  small
+                  title={photoBusy ? 'Removing…' : 'Remove'}
+                  variant="ghost"
+                  disabled={photoBusy}
+                  onPress={async () => {
+                    setPhotoBusy(true);
+                    try {
+                      await setMyPhoto(null);
+                      setPhotoNote(null);
+                    } catch (e) {
+                      setPhotoNote(e instanceof Error ? e.message : 'Couldn’t remove it. Try again.');
+                    }
+                    setPhotoBusy(false);
+                  }}
+                />
+              ) : null}
+            </View>
+          ) : null}
+          <Text style={s.photoHint}>
+            {photoNote ??
+              (mode === 'cloud'
+                ? 'Your friends see it wherever your name appears.'
+                : 'Shown wherever your name appears on this phone.')}
+          </Text>
+          <PhotoFramer
+            key={picked ?? 'none'}
+            src={picked}
+            onCancel={() => setPicked(null)}
+            onSave={async (image) => {
+              await setMyPhoto(image);
+              setPicked(null);
+              setPhotoNote('Picture saved.');
+            }}
+          />
+        </View>
+      ) : null}
       {mode === 'cloud' && !existing ? (
         <>
           <Text style={[s.sectionHead, { marginTop: 0 }]}>Send a friend request</Text>
@@ -240,4 +299,7 @@ const s = StyleSheet.create({
   readHead: { alignItems: 'center', marginTop: space.lg, marginBottom: space.xl, gap: space.sm },
   readName: { fontFamily: fonts.light, fontSize: 26, color: colors.text },
   readUpi: { fontSize: 14, color: colors.muted },
+  photoHead: { alignItems: 'center', marginBottom: space.lg },
+  photoButtons: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
+  photoHint: { fontSize: 12, color: colors.muted, marginTop: space.sm, textAlign: 'center' },
 });

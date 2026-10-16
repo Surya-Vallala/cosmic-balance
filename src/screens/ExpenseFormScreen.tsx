@@ -212,7 +212,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
                   label={f.name}
                   selected={withIds.includes(f.id)}
                   onPress={() => toggleFriend(f.id)}
-                  leading={<Avatar name={f.name} size={20} />}
+                  leading={<Avatar id={f.id} name={f.name} size={20} />}
                 />
               ))}
             </View>
@@ -239,7 +239,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
               setPaidBy(m);
               setMultiPay(false);
             }}
-            leading={<Avatar name={state.people[m]?.name ?? '?'} size={20} />}
+            leading={<Avatar id={m} name={state.people[m]?.name ?? '?'} size={20} />}
           />
         ))}
         <Chip
@@ -258,7 +258,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
           <List>
             {members.map((m, i) => (
               <View key={m} style={[s.memberRow, i < members.length - 1 && s.divider]}>
-                <Avatar name={state.people[m]?.name ?? '?'} size={32} />
+                <Avatar id={m} name={state.people[m]?.name ?? '?'} size={32} />
                 <Text style={s.memberName}>{nameOf(m)}</Text>
                 <Text style={s.prefix}>{prefix}</Text>
                 <SmallInput
@@ -310,7 +310,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
                 style={[s.memberRow, !last && s.divider]}
               >
                 <View style={[s.check, on && s.checkOn]}>{on ? <Text style={s.checkMark}>✓</Text> : null}</View>
-                <Avatar name={state.people[m]?.name ?? '?'} size={32} />
+                <Avatar id={m} name={state.people[m]?.name ?? '?'} size={32} />
                 <Text style={s.memberName}>{nameOf(m)}</Text>
                 <Text style={s.memberShare}>{on && share !== null ? money(share) : ''}</Text>
               </Pressable>
@@ -319,7 +319,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
           const suffix = splitType === 'percent' ? '%' : splitType === 'shares' ? 'shares' : '';
           return (
             <View key={m} style={[s.memberRow, !last && s.divider]}>
-              <Avatar name={state.people[m]?.name ?? '?'} size={32} />
+              <Avatar id={m} name={state.people[m]?.name ?? '?'} size={32} />
               <View style={{ flex: 1, marginLeft: space.md }}>
                 <Text style={[s.memberName, { marginLeft: 0 }]}>{nameOf(m)}</Text>
                 {splitType !== 'exact' && share !== null ? <Text style={s.computed}>{money(share)}</Text> : null}

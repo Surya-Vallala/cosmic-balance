@@ -63,9 +63,9 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
     return (
       <Screen>
         <View style={s.pair}>
-          <Avatar name={state.people[p.from]?.name ?? '?'} size={56} />
+          <Avatar id={p.from} name={state.people[p.from]?.name ?? '?'} size={56} />
           <View style={s.pairLine} />
-          <Avatar name={state.people[p.to]?.name ?? '?'} size={56} />
+          <Avatar id={p.to} name={state.people[p.to]?.name ?? '?'} size={56} />
         </View>
         <Text style={s.big}>
           {nameOf(p.from)} paid {p.to === meId ? 'you' : nameOf(p.to)} {formatMoney(p.amount, p.currency)}
@@ -195,7 +195,7 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
             label={nameOf(m)}
             selected={from === m}
             onPress={() => setFrom(m)}
-            leading={<Avatar name={state.people[m]?.name ?? '?'} size={20} />}
+            leading={<Avatar id={m} name={state.people[m]?.name ?? '?'} size={20} />}
           />
         ))}
       </View>
@@ -208,7 +208,7 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
             label={nameOf(m)}
             selected={to === m}
             onPress={() => setTo(m)}
-            leading={<Avatar name={state.people[m]?.name ?? '?'} size={20} />}
+            leading={<Avatar id={m} name={state.people[m]?.name ?? '?'} size={20} />}
           />
         ))}
       </View>

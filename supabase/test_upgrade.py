@@ -209,7 +209,7 @@ as_user('surya', 'insert into public.expenses (id, group_id, data) values (%s, n
 check(len(as_user('ravi', 'select * from public.expenses where group_id is null')) == 1, 'and expenses outside groups work')
 check(len(one('surya', 'select public.my_friend_code()')) == 12, 'and friend links work')
 
-# --- Version 5 (live now, with a phone signed up) to the current version ------------------
+# --- Version 5 (with a phone signed up) to the current version ------------------
 V5_COMMIT = '221d8e5'
 v5 = subprocess.run(['git', '-C', HERE, 'show', f'{V5_COMMIT}:supabase/schema.sql'],
                     check=True, capture_output=True, text=True).stdout
@@ -231,5 +231,7 @@ check(True, 'the current schema.sql runs cleanly on top of version 5')
 check(one('surya', 'select public.my_push_status(%s)', (ep,))['registered'], 'phones signed up before are kept')
 as_user('surya', 'select public.send_test_notification()')
 check(one('surya', "select count(*) from public.notifications where kind = 'test'") == 1, 'and a test notification can be sent')
+check(one('surya', 'select public.set_my_photo(%s)', ('data:image/jpeg;base64,AAAA',)) is not None,
+      'and a profile picture can be set')
 
 print(f'\nAll {passed} upgrade checks passed.')

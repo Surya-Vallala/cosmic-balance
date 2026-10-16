@@ -41,7 +41,7 @@ export function IncomingFriendRequests() {
           const name = p?.name ?? 'Someone';
           return (
             <View key={r.id} style={[s.row, i < incoming.length - 1 && s.divider]}>
-              <Avatar name={name} size={32} />
+              <Avatar id={r.fromPerson} name={name} size={32} />
               <View style={{ flex: 1, marginLeft: space.md, marginRight: space.sm }}>
                 <Text style={s.name}>{name}</Text>
                 <Text style={s.sub}>{busy === r.id ? 'Saving…' : p?.email ?? 'Opened your friend link'}</Text>

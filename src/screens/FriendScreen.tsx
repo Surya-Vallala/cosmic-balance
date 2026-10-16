@@ -69,7 +69,12 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
   return (
     <Screen>
       <View style={s.head}>
-        {overall.length === 0 && hasHistory ? <Supernova size={48} /> : <Avatar name={friend.name} size={44} />}
+        {/* Settled up: a supernova, unless they have a picture (their face beats a star). */}
+        {overall.length === 0 && hasHistory && !state.photos?.[friend.id] ? (
+          <Supernova size={48} />
+        ) : (
+          <Avatar id={friend.id} name={friend.name} size={44} />
+        )}
         <View style={{ flex: 1, marginLeft: space.md }}>
           {lines.map((l) => (
             <Text key={l.text} style={[s.headline, { color: l.color }]}>

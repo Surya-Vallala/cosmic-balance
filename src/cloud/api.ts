@@ -4,7 +4,7 @@ import type { GroupRow, Op, PersonRow, Rows } from './sync';
 
 const TABLES = ['people', 'groups', 'expenses', 'payments', 'transfers'] as const;
 /** Tables added later: an older database simply doesn't have them yet. */
-const OPTIONAL_TABLES = ['notifications', 'join_requests', 'contacts', 'friend_requests'] as const;
+const OPTIONAL_TABLES = ['notifications', 'join_requests', 'contacts', 'friend_requests', 'avatars'] as const;
 
 /**
  * A request that didn't work. `retry` is true when it's worth trying again
@@ -69,6 +69,8 @@ export async function fetchRows(): Promise<Rows> {
         supabase.from('join_requests').select('*'),
         supabase.from('contacts').select('person_id'),
         supabase.from('friend_requests').select('*'),
+        // Just who has a picture and when it changed; the pictures come separately, only when new.
+        supabase.from('avatars').select('person_id, updated_at'),
       ]),
     ]);
   } catch (e) {
@@ -147,6 +149,22 @@ export function deletePushSubscription(endpoint: string): Promise<void> {
 export async function runSendPush(): Promise<void> {
   const { error } = await supabase.functions.invoke('send-push', { body: {} });
   if (error) throw new Error('The server couldn’t send notifications just now. Try again in a minute.');
+}
+
+/** Profile pictures for these people (only fetched when they've changed). */
+export async function fetchPhotos(ids: string[]): Promise<{ person_id: string; image: string; updated_at: string }[]> {
+  const out: { person_id: string; image: string; updated_at: string }[] = [];
+  for (let i = 0; i < ids.length; i += 50) {
+    const res = await supabase.from('avatars').select('person_id, image, updated_at').in('person_id', ids.slice(i, i + 50));
+    if (res.error) throw toCloudError(res.error, res.status);
+    out.push(...((res.data ?? []) as typeof out));
+  }
+  return out;
+}
+
+/** Set (or, with null, remove) your own profile picture. Returns when it was saved. */
+export function setMyPhoto(image: string | null): Promise<string | null> {
+  return rpc<string | null>('set_my_photo', { p_image: image });
 }
 
 /** A test notification to your own phones. */

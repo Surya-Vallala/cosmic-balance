@@ -29,6 +29,7 @@ There are two ways to use it:
 - **Simplify debts** (on by default, can be switched off per group): the group settles with the fewest payments.
 - **Settle up** in any of the group's currencies: the amount owed is shown in each, and paying the suggested amount clears the balance exactly. Record a payment. If you're paying someone who has a UPI ID, it opens GPay, PhonePe, Paytm or similar with the amount already filled in. If someone owes you, send a reminder through WhatsApp or any other app.
 - **Activity feed** of everything that's been added, edited, or paid.
+- **Profile pictures**: Your profile → **Add a picture**, pick one from the gallery, drag and pinch (or slide) to frame it in the circle. It shows wherever your name appears, for everyone who can see you. Each person sets only their own; saved as a small 192 px picture (about 10 KB), and phones download a friend's picture only when it changes.
 - **Home lists in the order you want**: groups and friends start with the latest activity on top (an expense added or edited, a payment, money given). **Sort** switches to Name or Balance; each list remembers its choice on the phone.
 - **Notifications** (shared mode): the bell on the home screen lists what concerns you, and phones can get them even when the app is closed. See below.
 - **Remove a friend** you're settled up with (their page → Remove). History in groups is never rewritten, so someone in a group's expenses can be removed only after that group is deleted, and someone in a group another person created only after that person takes them out.
@@ -163,11 +164,11 @@ Free Supabase projects pause after about a week with no activity. The workflow i
 ```bash
 npx tsc --noEmit                 # type-check
 npx expo lint                    # lint
-npx vitest run                   # 95 tests: splits, payers, currencies, rounding, balances, summary,
+npx vitest run                   # 102 tests: splits, payers, currencies, rounding, balances, summary,
                                  # transfers, removing friends, database rows, screen addresses, messages,
-                                 # dates, remarks, friend search
-python3 supabase/test_rls.py     # 220 checks of who can see and change what, join requests, notifications,
-                                 # test notifications and friend removal (needs Postgres 16 on :5433)
+                                 # dates, remarks, friend search, sorting, pictures
+python3 supabase/test_rls.py     # 235 checks of who can see and change what, join requests, notifications,
+                                 # test notifications, profile pictures and friend removal (needs Postgres 16 on :5433)
 python3 supabase/test_upgrade.py # upgrading databases made with versions 1, 3, 4 and 5
 # supabase/functions/send-push/test.mts: Web Push encryption and signing checked against the
 # reference libraries, and delivery through a local database (see the top of the file)
