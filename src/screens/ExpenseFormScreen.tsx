@@ -151,6 +151,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
         note: remarks.trim() || undefined,
         date: fromDay(day, existing?.date),
         createdAt: existing?.createdAt ?? new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       },
     });
     navigation.goBack();

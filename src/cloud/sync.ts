@@ -114,6 +114,7 @@ export function rowsToState(rows: Rows, meId: Id): AppState {
     note: typeof r.data.note === 'string' && r.data.note.trim() ? r.data.note : undefined,
     date: r.data.date ?? r.created_at,
     createdAt: r.data.createdAt ?? r.created_at,
+    updatedAt: r.updated_at ?? r.data.updatedAt ?? r.data.createdAt ?? r.created_at,
   }));
   const payments: Payment[] = rows.payments.map((r) => ({
     ...r.data,

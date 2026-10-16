@@ -76,7 +76,8 @@ describe('rowsToState', () => {
   });
 
   it('takes expenses and transfers from their stored data', () => {
-    expect(s.expenses[0]).toEqual(expense);
+    // Plus when it was last changed (the row's time when the data doesn't say), for sorting.
+    expect(s.expenses[0]).toEqual({ ...expense, updatedAt: expense.createdAt });
     expect(s.transfers[0]).toMatchObject({ id: 't1', from: ME, to: RAVI, amount: 15000 });
   });
 

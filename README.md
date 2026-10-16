@@ -29,6 +29,7 @@ There are two ways to use it:
 - **Simplify debts** (on by default, can be switched off per group): the group settles with the fewest payments.
 - **Settle up** in any of the group's currencies: the amount owed is shown in each, and paying the suggested amount clears the balance exactly. Record a payment. If you're paying someone who has a UPI ID, it opens GPay, PhonePe, Paytm or similar with the amount already filled in. If someone owes you, send a reminder through WhatsApp or any other app.
 - **Activity feed** of everything that's been added, edited, or paid.
+- **Home lists in the order you want**: groups and friends start with the latest activity on top (an expense added or edited, a payment, money given). **Sort** switches to Name or Balance; each list remembers its choice on the phone.
 - **Notifications** (shared mode): the bell on the home screen lists what concerns you, and phones can get them even when the app is closed. See below.
 - **Remove a friend** you're settled up with (their page → Remove). History in groups is never rewritten, so someone in a group's expenses can be removed only after that group is deleted, and someone in a group another person created only after that person takes them out.
 - **The phone's Back button** goes to the previous screen (each screen has its own address, so reloading also stays put).

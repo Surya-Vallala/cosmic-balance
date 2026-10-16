@@ -439,6 +439,39 @@ export function SmallInput(props: TextInputProps) {
   );
 }
 
+/** "Sort  Recent · Name · Balance": small one-tap choices above a list. */
+export function SortBar<T extends string>({
+  value,
+  onChange,
+  options,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+}) {
+  return (
+    <View style={styles.sortBar}>
+      <Text style={styles.sortLabel}>Sort</Text>
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <Pressable
+            key={o.value}
+            accessibilityRole="button"
+            accessibilityState={{ selected: on }}
+            accessibilityLabel={`Sort by ${o.label.toLowerCase()}`}
+            onPress={() => onChange(o.value)}
+            hitSlop={4}
+            style={[styles.sortOption, on && styles.sortOptionOn]}
+          >
+            <Text style={[styles.sortText, on && { color: colors.text }]}>{o.label}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 /** A small search field with a magnifier and a clear button. */
 export function SearchBox({
   value,
@@ -939,6 +972,18 @@ export const styles = StyleSheet.create({
   rowTitle: { fontSize: 14, color: colors.text, fontWeight: '600' },
   rowSubtitle: { fontSize: 12, color: colors.muted, marginTop: 1 },
   rowNote: { color: colors.textSoft, fontStyle: 'italic' },
+  sortBar: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: space.sm, marginHorizontal: space.xs },
+  sortLabel: { fontSize: 12, color: colors.muted, marginRight: 2 },
+  sortOption: {
+    height: 26,
+    paddingHorizontal: 10,
+    borderRadius: 13,
+    borderWidth: 1,
+    borderColor: 'transparent',
+    justifyContent: 'center',
+  },
+  sortOptionOn: { backgroundColor: colors.raised, borderColor: colors.line },
+  sortText: { fontSize: 12, fontWeight: '600', color: colors.muted },
   search: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -588,3 +588,71 @@ export function canRemoveFriend(s: AppState, friendId: Id, myUserId: string | nu
   }
   return { ok: true, leaves: groups };
 }
+
+// ---------------------------------------------------------------------------
+// Sorting the home screen lists
+
+export type SortBy = 'recent' | 'name' | 'balance';
+
+const later = (a: string | undefined, b: string | undefined) => (!a ? b : !b ? a : a > b ? a : b);
+const touched = (e: Expense) => e.updatedAt ?? e.createdAt ?? e.date;
+
+/**
+ * When something last happened in each group: an expense added or edited, a
+ * payment recorded, or (with nothing yet) the group being made.
+ */
+export function lastGroupActivity(groups: Group[], expenses: Expense[], payments: Payment[]): Record<Id, string> {
+  const out: Record<Id, string> = {};
+  for (const g of groups) out[g.id] = g.createdAt;
+  for (const e of expenses) if (e.groupId && out[e.groupId]) out[e.groupId] = later(out[e.groupId], touched(e))!;
+  for (const p of payments) if (out[p.groupId]) out[p.groupId] = later(out[p.groupId], p.date)!;
+  return out;
+}
+
+/**
+ * When you and each friend last had something together: an expense you're
+ * both in (in a group or not), a payment between you, or money given.
+ */
+export function lastFriendActivity(meId: Id, expenses: Expense[], payments: Payment[], transfers: Transfer[]): Record<Id, string> {
+  const out: Record<Id, string> = {};
+  const bump = (id: Id, at: string | undefined) => {
+    if (id !== meId && at) out[id] = later(out[id], at)!;
+  };
+  for (const e of expenses) {
+    const people = expensePeople(e);
+    if (!people.includes(meId)) continue;
+    for (const id of people) bump(id, touched(e));
+  }
+  for (const p of payments) {
+    if (p.from === meId) bump(p.to, p.date);
+    else if (p.to === meId) bump(p.from, p.date);
+  }
+  for (const t of transfers) {
+    if (t.from === meId) bump(t.to, t.createdAt ?? t.date);
+    else if (t.to === meId) bump(t.from, t.createdAt ?? t.date);
+  }
+  return out;
+}
+
+/**
+ * Order a list for the home screen. Recent: latest activity first (none at
+ * the end). Balance: the biggest amount either way first. Ties go by name.
+ */
+export function sortForHome<T extends { id: Id; name: string }>(
+  items: T[],
+  by: SortBy,
+  last: Record<Id, string>,
+  size: (id: Id) => number,
+): T[] {
+  const byName = (a: T, b: T) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  const recent = (a: T, b: T) => {
+    const x = last[a.id] ?? '';
+    const y = last[b.id] ?? '';
+    return x === y ? 0 : x > y ? -1 : 1;
+  };
+  return [...items].sort((a, b) => {
+    if (by === 'name') return byName(a, b);
+    if (by === 'balance') return size(b.id) - size(a.id) || recent(a, b) || byName(a, b);
+    return recent(a, b) || byName(a, b);
+  });
+}

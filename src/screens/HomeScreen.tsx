@@ -1,9 +1,22 @@
-import React, { useMemo, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Libra } from '../cosmos';
 import { relativeDay } from '../dates';
-import { friendBalances, groupCurrencies, groupNet, nonGroupExpenses, nonZero, outsideBalances, sumTotals } from '../logic';
+import {
+  friendBalances,
+  groupCurrencies,
+  groupNet,
+  lastFriendActivity,
+  lastGroupActivity,
+  nonGroupExpenses,
+  nonZero,
+  outsideBalances,
+  sortForHome,
+  sumTotals,
+  type SortBy,
+} from '../logic';
 import { currency, formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
 import { filterFriends, SEARCH_FROM } from '../search';
@@ -12,10 +25,38 @@ import { Bell } from '../notify-ui';
 import { useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { Totals } from '../types';
-import { Avatar, BalanceTag, Button, Empty, GroupBadge, List, Row, SearchBox, Segmented, Starfield, TotalsTag, Wordmark } from '../ui';
+import { Avatar, BalanceTag, Button, Empty, GroupBadge, List, Row, SearchBox, Segmented, SortBar, Starfield, TotalsTag, Wordmark } from '../ui';
 
 /** Size of group badges and avatars in the lists. */
 const LIST_ICON = 28;
+
+const SORTS: { value: SortBy; label: string }[] = [
+  { value: 'recent', label: 'Recent' },
+  { value: 'name', label: 'Name' },
+  { value: 'balance', label: 'Balance' },
+];
+// The order picked for each list, remembered on this phone.
+const SORT_KEYS = { groups: 'cosmic-khaata:sort-groups', friends: 'cosmic-khaata:sort-friends' } as const;
+const isSort = (v: string | null): v is SortBy => v === 'recent' || v === 'name' || v === 'balance';
+
+/** A list order the app remembers on this phone (latest activity until changed). */
+function useSort(key: string): [SortBy, (v: SortBy) => void] {
+  const [sort, setSort] = useState<SortBy>('recent');
+  useEffect(() => {
+    let live = true;
+    AsyncStorage.getItem(key)
+      .then((v) => live && isSort(v) && setSort(v))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [key]);
+  const choose = (v: SortBy) => {
+    setSort(v);
+    AsyncStorage.setItem(key, v).catch(() => {});
+  };
+  return [sort, choose];
+}
 
 type Tab = 'groups' | 'friends' | 'activity';
 
@@ -30,6 +71,8 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('groups');
   const [search, setSearch] = useState('');
+  const [groupSort, setGroupSort] = useSort(SORT_KEYS.groups);
+  const [friendSort, setFriendSort] = useSort(SORT_KEYS.friends);
   const meId = state.meId!;
   const me = state.people[meId];
 
@@ -71,9 +114,25 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
   // Requests waiting for you, per group you run.
   const asking = (groupId: string) =>
     (state.joinRequests ?? []).filter((r) => r.groupId === groupId && r.personId !== meId).length;
-  const friends = Object.values(state.people)
-    .filter((p) => p.id !== meId && !p.requesting)
-    .sort((a, b) => friendTotal(b.id) - friendTotal(a.id) || a.name.localeCompare(b.name));
+  const friendLast = useMemo(
+    () => lastFriendActivity(meId, state.expenses, state.payments, state.transfers),
+    [meId, state.expenses, state.payments, state.transfers],
+  );
+  const friends = sortForHome(
+    Object.values(state.people).filter((p) => p.id !== meId && !p.requesting),
+    friendSort,
+    friendLast,
+    friendTotal,
+  );
+  const groupLast = useMemo(
+    () => lastGroupActivity(state.groups, state.expenses, state.payments),
+    [state.groups, state.expenses, state.payments],
+  );
+  const myGroupBalance = (id: string) => {
+    const g = state.groups.find((x) => x.id === id);
+    return g ? Math.abs(groupNet(g, state.expenses, state.payments)[meId] ?? 0) : 0;
+  };
+  const groups = sortForHome(state.groups, groupSort, groupLast, myGroupBalance);
 
   const shown = filterFriends(friends, search);
 
@@ -160,8 +219,9 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
               </>
             ) : (
               <>
+                {groups.length > 1 ? <SortBar value={groupSort} onChange={setGroupSort} options={SORTS} /> : null}
                 <List>
-                  {state.groups.map((g, i) => {
+                  {groups.map((g, i) => {
                     const count = state.expenses.filter((e) => e.groupId === g.id).length;
                     const mine = groupNet(g, state.expenses, state.payments)[meId] ?? 0;
                     const curs = groupCurrencies(g);
@@ -179,7 +239,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                         }
                         right={<BalanceTag amount={mine} currency={g.baseCurrency} kind="group" />}
                         onPress={() => navigation.navigate('Group', { groupId: g.id })}
-                        last={i === state.groups.length - 1 && outsideCount === 0}
+                        last={i === groups.length - 1 && outsideCount === 0}
                       />
                     );
                   })}
@@ -216,6 +276,9 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
               <>
                 {friends.length >= SEARCH_FROM ? (
                   <SearchBox value={search} onChangeText={setSearch} style={{ marginBottom: space.sm }} />
+                ) : null}
+                {friends.length > 1 && shown.length > 0 ? (
+                  <SortBar value={friendSort} onChange={setFriendSort} options={SORTS} />
                 ) : null}
                 {shown.length === 0 ? (
                   <Text style={s.noMatch}>No friend matches “{search.trim()}”.</Text>
@@ -301,7 +364,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
           <View style={s.sheetHandle} />
           <Text style={s.sheetTitle}>Add an expense to</Text>
           <ScrollView style={{ maxHeight: 420 }}>
-            {state.groups.map((g) => (
+            {groups.map((g) => (
               <Row
                 key={g.id}
                 left={<GroupBadge name={g.name} size={36} />}

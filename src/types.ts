@@ -69,6 +69,8 @@ export interface Expense {
   note?: string;
   date: string;
   createdAt: string;
+  /** When it was last added or edited (for sorting by recent activity). */
+  updatedAt?: string;
 }
 
 export interface Payment {
