@@ -31,6 +31,7 @@ import SettleUpScreen from './src/screens/SettleUpScreen';
 import TransferScreen from './src/screens/TransferScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import { StoreProvider, useStore } from './src/store';
+import { reloadApp, useAppUpdate } from './src/update';
 import { colors, fonts, space } from './src/theme';
 import { Button, Empty } from './src/ui';
 
@@ -158,6 +159,31 @@ function OfflineStrip() {
   );
 }
 
+/** Screens where something may be half typed: an update waits for a tap there. */
+const FORMS = new Set(['ExpenseForm', 'Transfer', 'SettleUp', 'SettleAll', 'GroupForm', 'FriendForm', 'Onboarding', 'Join']);
+const safeToReload = () => {
+  const route = navigationRef.isReady() ? navigationRef.getCurrentRoute()?.name : undefined;
+  return !route || !FORMS.has(route);
+};
+
+/** A newer version was published while a form is open: offer to switch. */
+function UpdateBar({ show }: { show: boolean }) {
+  const insets = useSafeAreaInsets();
+  if (!show) return null;
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="A new version of Cosmic Balance is ready. Refresh"
+      onPress={() => reloadApp()}
+      style={[styles.offline, { paddingTop: insets.top + 6 }]}
+    >
+      <Text style={styles.offlineText}>
+        A new version is ready · <Text style={{ color: colors.star, fontWeight: '700' }}>Refresh</Text>
+      </Text>
+    </Pressable>
+  );
+}
+
 /** If a screen ever fails to draw, offer a way back instead of a blank page. */
 class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { failed: boolean; attempt: number }> {
   state = { failed: false, attempt: 0 };
@@ -204,6 +230,8 @@ function AppNavigator() {
   const { state, ready, mode, loadError } = useStore();
   const { pendingJoin, pendingInvite, pendingFriend } = useAuth();
   const [navReady, setNavReady] = useState(false);
+  // A newer version: reload when nothing is half typed (else the Refresh bar).
+  const updateWaiting = useAppUpdate(safeToReload);
 
   // A notification tapped while the app was open.
   useEffect(() => onNotificationTap(openPath), []);
@@ -222,10 +250,15 @@ function AppNavigator() {
   return (
     <View style={{ flex: 1, backgroundColor: colors.space }}>
       <OfflineStrip />
+      <UpdateBar show={updateWaiting} />
       <NavigationContainer
         ref={navigationRef}
         theme={navTheme}
         onReady={() => setNavReady(true)}
+        // Leaving a form with an update waiting (say after saving): switch now.
+        onStateChange={() => {
+          if (updateWaiting && safeToReload()) reloadApp(true);
+        }}
         linking={Platform.OS === 'web' && state.meId ? linking : undefined}
         documentTitle={{ formatter: (options, route) => {
           const title = options?.title ?? (route?.name === 'Home' ? undefined : route?.name);
