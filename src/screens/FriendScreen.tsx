@@ -12,7 +12,7 @@ import { colors, fonts, space } from '../theme';
 import { Avatar, BalanceTag, Button, ConfirmButton, Empty, GroupBadge, List, Row, Screen, SectionTitle } from '../ui';
 
 export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'>) {
-  const { state, mode, dispatch, userId } = useStore();
+  const { state, mode, dispatch, userId, fresh } = useStore();
   const meId = state.meId!;
   const friend = state.people[route.params.friendId];
   const notJoined = mode === 'cloud' && !!friend && !friend.userId;
@@ -204,6 +204,7 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
                 }
                 onPress={() => navigation.navigate('Transfer', { transferId: t.id })}
                 last={last}
+                isNew={fresh.items.has(`t:${t.id}`)}
               />
             );
           })}

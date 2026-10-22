@@ -18,7 +18,7 @@ export function namesList(names: string[]): string {
 
 /** One expense outside groups, as a row: what it was, who with, and what it means for you. */
 export function OutsideExpenseRow({ e, last, onPress }: { e: Expense; last: boolean; onPress: () => void }) {
-  const { state } = useStore();
+  const { state, fresh } = useStore();
   const nameOf = useName();
   const meId = state.meId!;
   const d = shortDate(e.date);
@@ -53,6 +53,7 @@ export function OutsideExpenseRow({ e, last, onPress }: { e: Expense; last: bool
       }
       onPress={onPress}
       last={last}
+      isNew={fresh.items.has(`e:${e.id}`)}
     />
   );
 }

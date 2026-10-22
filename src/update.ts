@@ -57,10 +57,19 @@ function markTried(latest: string): void {
   }
 }
 
-/** Load the newest version: refresh the phone's copy of the page, then reload. */
+let leaving = false;
+/** True while the app is reloading itself into a new version (which isn't the user leaving it). */
+export function leavingForUpdate(): boolean {
+  return leaving;
+}
+
+/** Load the newest version: refresh the phone's copies of the page, then reload. */
 async function switchTo(latest?: string): Promise<void> {
   if (latest) markTried(latest);
-  await fetch(APP_BASE, { cache: 'reload' }).catch(() => {});
+  leaving = true;
+  // The page as opened (with its screen in the address) and the bare one.
+  const pages = [...new Set([window.location.href, new URL(APP_BASE, window.location.href).href])];
+  await Promise.all(pages.map((u) => fetch(u, { cache: 'reload' }).catch(() => {})));
   window.location.reload();
 }
 

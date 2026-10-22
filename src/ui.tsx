@@ -14,6 +14,7 @@ import {
   ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Path } from 'react-native-svg';
 import { BlackHole } from './cosmos';
 import { dayLabel, toDay } from './dates';
 import { fromBase, groupCurrencies } from './logic';
@@ -712,6 +713,27 @@ export function CurrencyPicker({
 // ---------------------------------------------------------------------------
 // Lists and text
 
+// ---------------------------------------------------------------------------
+// "New since your last visit": a small gold star after the title, and the row
+// softly lit.
+
+/** A four-pointed star: something new appeared. */
+export function Sparkle({ size = 12, color = colors.star }: { size?: number; color?: string }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 0.5C12.9 7.4 16.6 11.1 23.5 12C16.6 12.9 12.9 16.6 12 23.5C11.1 16.6 7.4 12.9 0.5 12C7.4 11.1 11.1 7.4 12 0.5Z" fill={color} />
+    </Svg>
+  );
+}
+
+function NewMark({ label }: { label?: string }) {
+  return (
+    <View testID="new-mark" accessibilityRole="image" accessibilityLabel={label ?? 'New'} style={{ marginLeft: 6 }}>
+      <Sparkle size={11} />
+    </View>
+  );
+}
+
 export function Row({
   left,
   title,
@@ -721,6 +743,8 @@ export function Row({
   last,
   titleLines = 1,
   note,
+  isNew,
+  newLabel,
 }: {
   titleLines?: number;
   left?: React.ReactNode;
@@ -731,16 +755,28 @@ export function Row({
   right?: React.ReactNode;
   onPress?: () => void;
   last?: boolean;
+  /** Added or changed by a friend since your last visit. */
+  isNew?: boolean;
+  /** What's new, for a row that stands for many things ("2 new"). */
+  newLabel?: string;
 }) {
+  const lead = isNew && newLabel ? newLabel : null;
   const content = (
-    <View style={[styles.row, !last && styles.rowDivider]}>
+    <View style={[styles.row, !last && styles.rowDivider, isNew && styles.rowNew]}>
       {left ? <View style={{ marginRight: space.md }}>{left}</View> : null}
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text style={[styles.rowTitle, titleLines > 1 && { fontWeight: '400', lineHeight: 21 }]} numberOfLines={titleLines}>
-          {title}
-        </Text>
-        {subtitle ? (
+        <View style={styles.rowTitleLine}>
+          <Text
+            style={[styles.rowTitle, { flexShrink: 1 }, titleLines > 1 && { fontWeight: '400', lineHeight: 21 }]}
+            numberOfLines={titleLines}
+          >
+            {title}
+          </Text>
+          {isNew ? <NewMark label={newLabel} /> : null}
+        </View>
+        {subtitle || lead ? (
           <Text style={styles.rowSubtitle} numberOfLines={note ? 1 : 2}>
+            {lead ? <Text style={styles.rowNewLead}>{lead}{subtitle ? ' · ' : ''}</Text> : null}
             {subtitle}
             {note ? <Text style={styles.rowNote}> · {note.replace(/\s+/g, ' ').trim()}</Text> : null}
           </Text>
@@ -988,6 +1024,9 @@ export const styles = StyleSheet.create({
   rowTitle: { fontSize: 14, color: colors.text, fontWeight: '600' },
   rowSubtitle: { fontSize: 12, color: colors.muted, marginTop: 1 },
   rowNote: { color: colors.textSoft, fontStyle: 'italic' },
+  rowTitleLine: { flexDirection: 'row', alignItems: 'center' },
+  rowNew: { backgroundColor: 'rgba(242, 196, 109, 0.07)' },
+  rowNewLead: { color: colors.star, fontWeight: '600', fontStyle: 'normal' },
   sortBar: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: space.sm, marginHorizontal: space.xs },
   sortLabel: { fontSize: 12, color: colors.muted, marginRight: 2 },
   sortOption: {

@@ -16,10 +16,12 @@ import {
   subscribe,
 } from './cloud/api';
 import { actionToOps, personFromRow, rowsToState, type Op } from './cloud/sync';
+import { acknowledge, comeBack, fingerprints, NOTHING_NEW, startVisit, whatsNew, type Fresh, type Seen, type Visits } from './fresh';
 import { expensePeople } from './logic';
 import { formatMoney } from './money';
 import { PhotoContext, syncPhotos } from './photos';
 import { refreshPushSubscription, setBadge } from './push';
+import { leavingForUpdate } from './update';
 import type { Activity, AppState, Expense, Group, Id, Payment, Person, Photo, Transfer } from './types';
 
 // Storage keys keep the app's earlier name, so nothing saved on phones is lost.
@@ -258,8 +260,10 @@ interface Store {
   /** Signed-in account (shared mode). */
   userId: string | null;
   email: string | null;
-  /** Reload everything from the shared database. */
+  /** Reload everything from the shared database (after something you did: what it brings isn't marked new). */
   refresh: () => Promise<void>;
+  /** Shared mode: what friends added or changed since your last visit. */
+  fresh: Fresh;
   /** A change the database refused, shown to the user. */
   syncError: string | null;
   clearSyncError: () => void;
@@ -365,6 +369,29 @@ export function StoreProvider({
     stateRef.current = next;
     setState(next);
   }, []);
+
+  // ---- Shared mode: what's new since your last visit (see fresh.ts) -------------
+  const visitsKey = `${storageKey}:visits`;
+  const visits = useRef<Visits>({ base: null, left: null });
+  const [seenBase, setSeenBase] = useState<Seen | null>(null);
+  const setVisits = useCallback(
+    (v: Visits, save = true) => {
+      visits.current = v;
+      setSeenBase(v.base);
+      if (save) AsyncStorage.setItem(visitsKey, JSON.stringify(v)).catch(() => {});
+    },
+    [visitsKey],
+  );
+  /** Changes since `before` are your own: don't mark them. */
+  const ownChanges = useCallback(
+    (before: AppState) => {
+      const v = visits.current;
+      if (mode !== 'cloud' || !v.base) return;
+      const base = acknowledge(v.base, before, stateRef.current);
+      if (base !== v.base) setVisits({ ...v, base }, false);
+    },
+    [mode, setVisits],
+  );
 
   // ---- Shared mode: changes on their way to the database ------------------------
   // Each change shows at once and joins a queue saved on the phone. The queue
@@ -515,6 +542,8 @@ export function StoreProvider({
             pending.current = saved;
             setUnsaved(saved.length);
           }
+          const was = JSON.parse((await AsyncStorage.getItem(visitsKey)) ?? 'null');
+          if (!cancelled) setVisits(startVisit(was && typeof was === 'object' ? (was as Visits) : null));
         }
       } catch {
         // Storage unavailable: carry on without the cache.
@@ -525,7 +554,10 @@ export function StoreProvider({
         return;
       }
       await refreshRef.current();
-      if (!cancelled) setReady(true);
+      if (cancelled) return;
+      // First time on this phone: everything already there counts as seen.
+      if (!visits.current.base && stateRef.current.meId) setVisits({ base: fingerprints(stateRef.current), left: null });
+      setReady(true);
       if (pending.current.length) void flush();
     })();
     return () => {
@@ -586,6 +618,7 @@ export function StoreProvider({
       const before = stateRef.current;
       replaceState(reducer(before, action));
       if (mode !== 'cloud') return;
+      ownChanges(before);
       const ops = actionToOps(action, before);
       if (ops.length === 0) return;
       pending.current = [...pending.current, { id: uid(), action, ops }];
@@ -593,7 +626,7 @@ export function StoreProvider({
       wakeFlusher.current?.();
       void flush();
     },
-    [mode, replaceState, savePending, flush],
+    [mode, replaceState, savePending, flush, ownChanges],
   );
 
   // Looking someone up by email needs a connection; say so at once rather than queueing it.
@@ -620,11 +653,52 @@ export function StoreProvider({
     async (personId: Id, email: string) => {
       if (!offlineRef.current) await whenSaved();
       const id = await apiSetPersonEmail(personId, email).catch(needOnline);
+      const before = stateRef.current;
       await refreshRef.current();
+      ownChanges(before);
       return id;
     },
-    [whenSaved],
+    [whenSaved, ownChanges],
   );
+
+  // Leaving the app ends a visit: what's on screen then counts as seen once you
+  // come back (a quick look at another app doesn't count). Reloading into a new
+  // version isn't leaving.
+  useEffect(() => {
+    if (mode !== 'cloud') return;
+    const away = { since: null as number | null };
+    const leave = () => {
+      if (leavingForUpdate() || away.since !== null) return;
+      away.since = Date.now();
+      const s = stateRef.current;
+      setVisits({ ...visits.current, left: s.meId ? fingerprints(s) : null });
+    };
+    const back = () => {
+      if (away.since === null) return;
+      const ms = Date.now() - away.since;
+      away.since = null;
+      setVisits(comeBack(visits.current, ms));
+    };
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const onChange = () => (document.visibilityState === 'hidden' ? leave() : back());
+      document.addEventListener('visibilitychange', onChange);
+      return () => document.removeEventListener('visibilitychange', onChange);
+    }
+    const sub = RNAppState.addEventListener('change', (st) => (st === 'background' ? leave() : st === 'active' ? back() : undefined));
+    return () => sub.remove();
+  }, [mode, setVisits]);
+
+  const fresh: Fresh = useMemo(
+    () => (mode === 'cloud' ? whatsNew(state, seenBase) : NOTHING_NEW),
+    [mode, state, seenBase],
+  );
+
+  /** Fetch again after something you did through the server (joining, letting someone in…): not marked new. */
+  const refreshAfterMine = useCallback(async () => {
+    const before = stateRef.current;
+    await refresh();
+    ownChanges(before);
+  }, [refresh, ownChanges]);
 
   const markNoticesRead = useCallback(() => {
     const s = stateRef.current;
@@ -680,7 +754,8 @@ export function StoreProvider({
       mode,
       userId,
       email: mode === 'cloud' ? session?.user.email ?? null : null,
-      refresh,
+      refresh: refreshAfterMine,
+      fresh,
       syncError,
       clearSyncError: () => setSyncError(null),
       loadError,
@@ -699,7 +774,8 @@ export function StoreProvider({
       mode,
       userId,
       session,
-      refresh,
+      refreshAfterMine,
+      fresh,
       syncError,
       loadError,
       unsaved,

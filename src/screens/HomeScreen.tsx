@@ -4,6 +4,7 @@ import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'rea
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Libra } from '../cosmos';
 import { relativeDay } from '../dates';
+import { activityIsNew } from '../fresh';
 import {
   friendBalances,
   groupCurrencies,
@@ -67,7 +68,7 @@ function joinAmounts(entries: [string, number][]): string {
 }
 
 export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
-  const { state, mode, userId } = useStore();
+  const { state, mode, userId, fresh } = useStore();
   const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('groups');
   const [search, setSearch] = useState('');
@@ -240,6 +241,8 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                         right={<BalanceTag amount={mine} currency={g.baseCurrency} kind="group" />}
                         onPress={() => navigation.navigate('Group', { groupId: g.id })}
                         last={i === groups.length - 1 && outsideCount === 0}
+                        isNew={fresh.groups.has(g.id)}
+                        newLabel={newLabel(fresh.groups.get(g.id))}
                       />
                     );
                   })}
@@ -251,6 +254,8 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                       right={<TotalsTag totals={Object.fromEntries(outsideNet)} />}
                       onPress={() => navigation.navigate('Outside')}
                       last
+                      isNew={fresh.outside > 0}
+                      newLabel={newLabel(fresh.outside)}
                     />
                   ) : null}
                 </List>
@@ -299,6 +304,8 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                       right={<TotalsTag totals={fb[p.id] ?? {}} />}
                       onPress={() => navigation.navigate('Friend', { friendId: p.id })}
                       last={i === shown.length - 1}
+                      isNew={fresh.friends.has(p.id)}
+                      newLabel={newLabel(fresh.friends.get(p.id))}
                     />
                   ))}
                 </List>
@@ -330,6 +337,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
                         : undefined
                     }
                     last={i === arr.length - 1}
+                    isNew={activityIsNew(fresh, a.id)}
                   />
                 ))}
               </List>
@@ -391,6 +399,12 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
       </Modal>
     </View>
   );
+}
+
+/** "2 new" for a row on Home that stands for several things; just "New" for a group you were added to. */
+function newLabel(count: number | undefined): string | undefined {
+  if (count === undefined) return undefined;
+  return count === 0 ? 'New' : `${count} new`;
 }
 
 /** Badge for expenses outside groups: two moons sharing an orbit, no planet. */

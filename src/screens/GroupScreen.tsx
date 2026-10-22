@@ -16,7 +16,7 @@ import type { JoinRequest, Person } from '../types';
 import { Avatar, Button, Empty, equivalents, List, Pill, rateText, Row, Screen, SectionTitle, styles as ui } from '../ui';
 
 export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>) {
-  const { state, mode, userId, refresh } = useStore();
+  const { state, mode, userId, refresh, fresh } = useStore();
   const nameOf = useName();
   const insets = useSafeAreaInsets();
   const [inviteNote, setInviteNote] = useState<string | null>(null);
@@ -262,6 +262,7 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
                   right={<Text style={s.payAmount}>{formatMoney(p.amount, p.currency)}</Text>}
                   onPress={() => navigation.navigate('SettleUp', { groupId: group.id, paymentId: p.id })}
                   last={last}
+                  isNew={fresh.items.has(`p:${p.id}`)}
                 />
               );
             }
@@ -283,6 +284,7 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
                 right={right}
                 onPress={() => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
                 last={last}
+                isNew={fresh.items.has(`e:${e.id}`)}
               />
             );
           })}
