@@ -7,6 +7,7 @@ import type { ScreenProps } from '../navigation';
 import { useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { Expense } from '../types';
+import { TransactionList, type TxItem } from '../transaction-list';
 import { Button, Empty, List, Row, Screen } from '../ui';
 
 /** "Ravi", "Ravi and Priya" or "Ravi, Priya and 2 more". */
@@ -17,7 +18,17 @@ export function namesList(names: string[]): string {
 }
 
 /** One expense outside groups, as a row: what it was, who with, and what it means for you. */
-export function OutsideExpenseRow({ e, last, onPress }: { e: Expense; last: boolean; onPress: () => void }) {
+export function OutsideExpenseRow({
+  e,
+  last,
+  onPress,
+  showDate = true,
+}: {
+  e: Expense;
+  last: boolean;
+  onPress: () => void;
+  showDate?: boolean;
+}) {
   const { state, fresh } = useStore();
   const nameOf = useName();
   const meId = state.meId!;
@@ -34,10 +45,12 @@ export function OutsideExpenseRow({ e, last, onPress }: { e: Expense; last: bool
   return (
     <Row
       left={
-        <View style={s.dateBox}>
-          <Text style={s.dateMonth}>{d.month}</Text>
-          <Text style={s.dateDay}>{d.day}</Text>
-        </View>
+        showDate ? (
+          <View style={s.dateBox}>
+            <Text style={s.dateMonth}>{d.month}</Text>
+            <Text style={s.dateDay}>{d.day}</Text>
+          </View>
+        ) : undefined
       }
       title={e.description}
       subtitle={`${paidText} ${formatMoney(e.amount, e.currency)}${withText}`}
@@ -58,6 +71,39 @@ export function OutsideExpenseRow({ e, last, onPress }: { e: Expense; last: bool
   );
 }
 
+/** An expense outside groups, for a list in sections that can be searched. */
+export function outsideExpenseItem(
+  e: Expense,
+  meId: string,
+  namesOf: (ids: string[]) => (string | undefined)[],
+  isNew: boolean,
+  onPress: () => void,
+): TxItem {
+  const myShare = e.shares[meId] ?? 0;
+  const myPaid = e.payers[meId] ?? 0;
+  return {
+    key: e.id,
+    date: e.date,
+    kind: 'expense',
+    spent: { amount: e.amount, currency: e.currency },
+    involvesMe: myShare > 0 || myPaid > 0,
+    isNew,
+    search: {
+      texts: [e.description, e.note, e.currency, ...namesOf(expensePeople(e))],
+      amounts: [e.amount, myPaid - myShare],
+      dates: [e.date],
+    },
+    render: ({ last, showDate }) => <OutsideExpenseRow e={e} last={last} showDate={showDate} onPress={onPress} />,
+  };
+}
+
+/** Names to find things by: "you" and your own name for you. */
+export function useNamesOf() {
+  const { state } = useStore();
+  const nameOf = useName();
+  return (ids: string[]) => ids.flatMap((id) => (id === state.meId ? ['you', state.people[id]?.name] : [nameOf(id)]));
+}
+
 function Mine({ label, amount, color }: { label: string; amount: string; color: string }) {
   return (
     <View style={{ alignItems: 'flex-end' }}>
@@ -69,7 +115,8 @@ function Mine({ label, amount, color }: { label: string; amount: string; color: 
 
 /** Every expense between friends that isn't in a group. */
 export default function OutsideScreen({ navigation }: ScreenProps<'Outside'>) {
-  const { state } = useStore();
+  const { state, fresh } = useStore();
+  const namesOf = useNamesOf();
   const items = nonGroupExpenses(state.expenses).sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
   return (
@@ -83,16 +130,13 @@ export default function OutsideScreen({ navigation }: ScreenProps<'Outside'>) {
           <Empty title="Nothing here yet" body="Tap Add expense to split something with friends without making a group." />
         </List>
       ) : (
-        <List>
-          {items.map((e, i) => (
-            <OutsideExpenseRow
-              key={e.id}
-              e={e}
-              last={i === items.length - 1}
-              onPress={() => navigation.navigate('ExpenseForm', { expenseId: e.id })}
-            />
-          ))}
-        </List>
+        <TransactionList
+          items={items.map((e) =>
+            outsideExpenseItem(e, state.meId!, namesOf, fresh.items.has(`e:${e.id}`), () =>
+              navigation.navigate('ExpenseForm', { expenseId: e.id }),
+            ),
+          )}
+        />
       )}
     </Screen>
   );

@@ -6,13 +6,14 @@ import { inviteLink } from '../cloud/config';
 import { shareNote, ShareLink, useInviteLinks } from '../invites';
 import { groupLinkMessage } from '../messages';
 import { shortDate } from '../dates';
-import { groupCurrencies, groupDebts, groupNet, groupSummary } from '../logic';
+import { expensePeople, groupCurrencies, groupDebts, groupNet, groupSummary, toBase } from '../logic';
 import { formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
 import { shareText } from '../share';
 import { useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { JoinRequest, Person } from '../types';
+import { TransactionList, type TxItem } from '../transaction-list';
 import { Avatar, Button, Empty, equivalents, List, Pill, rateText, Row, Screen, SectionTitle, styles as ui } from '../ui';
 
 export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>) {
@@ -97,6 +98,79 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
     ...expenses.map((e) => ({ kind: 'expense' as const, date: e.date, id: e.id, e })),
     ...payments.map((p) => ({ kind: 'payment' as const, date: p.date, id: p.id, p })),
   ].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+
+  // Names to find things by ("you" and your own name for you).
+  const namesOf = (ids: string[]) => ids.flatMap((id) => (id === meId ? ['you', state.people[id]?.name] : [nameOf(id)]));
+  const dateBox = (date: string) => {
+    const d = shortDate(date);
+    return (
+      <View style={s.dateBox}>
+        <Text style={s.dateMonth}>{d.month}</Text>
+        <Text style={s.dateDay}>{d.day}</Text>
+      </View>
+    );
+  };
+  const listItems: TxItem[] = items.map((it) => {
+    if (it.kind === 'payment') {
+      const p = it.p;
+      return {
+        key: it.id,
+        date: it.date,
+        kind: 'payment',
+        involvesMe: p.from === meId || p.to === meId,
+        isNew: fresh.items.has(`p:${p.id}`),
+        search: {
+          texts: ['payment', 'paid', p.settlementId ? 'settle up' : null, ...namesOf([p.from, p.to])],
+          amounts: [p.amount],
+          dates: [p.date],
+        },
+        render: ({ last, showDate }) => (
+          <Row
+            left={showDate ? dateBox(p.date) : undefined}
+            title={`${nameOf(p.from)} paid ${p.to === meId ? 'you' : nameOf(p.to)}`}
+            subtitle={p.settlementId ? 'Part of an overall settle-up' : 'Payment'}
+            right={<Text style={s.payAmount}>{formatMoney(p.amount, p.currency)}</Text>}
+            onPress={() => navigation.navigate('SettleUp', { groupId: group.id, paymentId: p.id })}
+            last={last}
+            isNew={fresh.items.has(`p:${p.id}`)}
+          />
+        ),
+      };
+    }
+    const e = it.e;
+    const myShare = e.shares[meId] ?? 0;
+    const myPaid = e.payers[meId] ?? 0;
+    const diff = myPaid - myShare;
+    let right: React.ReactNode;
+    if (diff > 0) right = <Mine label="you lent" amount={formatMoney(diff, e.currency)} color={colors.owed} />;
+    else if (diff < 0) right = <Mine label="you borrowed" amount={formatMoney(-diff, e.currency)} color={colors.owe} />;
+    else right = <Text style={s.notInvolved}>{myPaid > 0 ? "you're even" : 'not involved'}</Text>;
+    return {
+      key: it.id,
+      date: it.date,
+      kind: 'expense',
+      spent: { amount: toBase(group, e.amount, e.currency), currency: base },
+      involvesMe: myShare > 0 || myPaid > 0,
+      isNew: fresh.items.has(`e:${e.id}`),
+      search: {
+        texts: [e.description, e.note, e.currency, ...namesOf(expensePeople(e))],
+        amounts: [e.amount, diff],
+        dates: [e.date],
+      },
+      render: ({ last, showDate }) => (
+        <Row
+          left={showDate ? dateBox(e.date) : undefined}
+          title={e.description}
+          subtitle={`${payersLabel(Object.keys(e.payers), meId, nameOf)} paid ${formatMoney(e.amount, e.currency)}`}
+          note={e.note}
+          right={right}
+          onPress={() => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
+          last={last}
+          isNew={fresh.items.has(`e:${e.id}`)}
+        />
+      ),
+    };
+  });
 
   const summary =
     myNet > 0
@@ -241,54 +315,7 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
           <Empty title="Add the first expense" body="Tap Add expense below when someone pays for the group." />
         </List>
       ) : (
-        <List>
-          {items.map((it, i) => {
-            const d = shortDate(it.date);
-            const dateBox = (
-              <View style={s.dateBox}>
-                <Text style={s.dateMonth}>{d.month}</Text>
-                <Text style={s.dateDay}>{d.day}</Text>
-              </View>
-            );
-            const last = i === items.length - 1;
-            if (it.kind === 'payment') {
-              const p = it.p;
-              return (
-                <Row
-                  key={it.id}
-                  left={dateBox}
-                  title={`${nameOf(p.from)} paid ${p.to === meId ? 'you' : nameOf(p.to)}`}
-                  subtitle={p.settlementId ? 'Part of an overall settle-up' : 'Payment'}
-                  right={<Text style={s.payAmount}>{formatMoney(p.amount, p.currency)}</Text>}
-                  onPress={() => navigation.navigate('SettleUp', { groupId: group.id, paymentId: p.id })}
-                  last={last}
-                  isNew={fresh.items.has(`p:${p.id}`)}
-                />
-              );
-            }
-            const e = it.e;
-            const myShare = e.shares[meId] ?? 0;
-            const myPaid = e.payers[meId] ?? 0;
-            const diff = myPaid - myShare;
-            let right: React.ReactNode;
-            if (diff > 0) right = <Mine label="you lent" amount={formatMoney(diff, e.currency)} color={colors.owed} />;
-            else if (diff < 0) right = <Mine label="you borrowed" amount={formatMoney(-diff, e.currency)} color={colors.owe} />;
-            else right = <Text style={s.notInvolved}>{myPaid > 0 ? "you're even" : 'not involved'}</Text>;
-            return (
-              <Row
-                key={it.id}
-                left={dateBox}
-                title={e.description}
-                subtitle={`${payersLabel(Object.keys(e.payers), meId, nameOf)} paid ${formatMoney(e.amount, e.currency)}`}
-                note={e.note}
-                right={right}
-                onPress={() => navigation.navigate('ExpenseForm', { groupId: group.id, expenseId: e.id })}
-                last={last}
-                isNew={fresh.items.has(`e:${e.id}`)}
-              />
-            );
-          })}
-        </List>
+        <TransactionList items={listItems} />
       )}
 
       <Modal visible={!!approving} transparent animationType="slide" onRequestClose={() => setApproving(null)}>

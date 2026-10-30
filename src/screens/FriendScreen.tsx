@@ -7,12 +7,14 @@ import { canRemoveFriend, expensePeople, friendBalanceByGroup, friendBalances, n
 import { formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
 import { useStore } from '../store';
-import { OutsideExpenseRow } from './OutsideScreen';
+import { outsideExpenseItem, useNamesOf } from './OutsideScreen';
+import { TransactionList, type TxItem } from '../transaction-list';
 import { colors, fonts, space } from '../theme';
 import { Avatar, BalanceTag, Button, ConfirmButton, Empty, GroupBadge, List, Row, Screen, SectionTitle } from '../ui';
 
 export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'>) {
   const { state, mode, dispatch, userId, fresh } = useStore();
+  const namesOf = useNamesOf();
   const meId = state.meId!;
   const friend = state.people[route.params.friendId];
   const notJoined = mode === 'cloud' && !!friend && !friend.userId;
@@ -164,17 +166,13 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
           cash and anything else you give each other.
         </Text>
       ) : (
-        <List>
-          {outsideItems.map((it, i) => {
-            const last = i === outsideItems.length - 1;
+        <TransactionList
+          noun="transfers and expenses"
+          filterable={false}
+          items={outsideItems.map((it): TxItem => {
             if (it.kind === 'expense') {
-              return (
-                <OutsideExpenseRow
-                  key={it.e.id}
-                  e={it.e}
-                  last={last}
-                  onPress={() => navigation.navigate('ExpenseForm', { expenseId: it.e.id })}
-                />
+              return outsideExpenseItem(it.e, meId, namesOf, fresh.items.has(`e:${it.e.id}`), () =>
+                navigation.navigate('ExpenseForm', { expenseId: it.e.id }),
               );
             }
             const t = it.t;
@@ -187,28 +185,39 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
                 : mine
                   ? `You gave ${friend.name}`
                   : `${friend.name} gave you`;
-            return (
-              <Row
-                key={t.id}
-                title={title}
-                subtitle={[t.note, relativeDay(t.date)].filter(Boolean).join(', ')}
-                right={
-                  <Text
-                    style={[
-                      s.amount,
-                      { color: t.kind === 'settlement' ? colors.textSoft : mine ? colors.owed : colors.owe },
-                    ]}
-                  >
-                    {formatMoney(t.amount, t.currency)}
-                  </Text>
-                }
-                onPress={() => navigation.navigate('Transfer', { transferId: t.id })}
-                last={last}
-                isNew={fresh.items.has(`t:${t.id}`)}
-              />
-            );
+            return {
+              key: t.id,
+              date: t.date,
+              kind: t.kind === 'settlement' ? 'settlement' : 'transfer',
+              involvesMe: true,
+              isNew: fresh.items.has(`t:${t.id}`),
+              search: {
+                texts: [title, t.note, t.kind === 'settlement' ? 'settle up' : 'transfer gave', t.currency, ...namesOf([t.from, t.to])],
+                amounts: [t.amount],
+                dates: [t.date],
+              },
+              render: ({ last, showDate }) => (
+                <Row
+                  title={title}
+                  subtitle={[t.note, showDate ? relativeDay(t.date) : null].filter(Boolean).join(', ') || (t.kind === 'settlement' ? 'Overall settle-up' : 'Transfer')}
+                  right={
+                    <Text
+                      style={[
+                        s.amount,
+                        { color: t.kind === 'settlement' ? colors.textSoft : mine ? colors.owed : colors.owe },
+                      ]}
+                    >
+                      {formatMoney(t.amount, t.currency)}
+                    </Text>
+                  }
+                  onPress={() => navigation.navigate('Transfer', { transferId: t.id })}
+                  last={last}
+                  isNew={fresh.items.has(`t:${t.id}`)}
+                />
+              ),
+            };
           })}
-        </List>
+        />
       )}
 
       <SectionTitle>Groups together</SectionTitle>

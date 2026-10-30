@@ -1,7 +1,7 @@
 // Finding friends by typing part of their name (or Gmail, in shared mode).
 
 /** Lower case and without accents, so "jose" finds "José". */
-function fold(s: string): string {
+export function fold(s: string): string {
   return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 }
 
