@@ -17,6 +17,7 @@ import { filterFriends, SEARCH_FROM } from '../search';
 import { uid, useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { CurrencyCode, SplitType } from '../types';
+import { NoMatchAdd, useAddFriend } from '../add-friend';
 import { useSplitMoney } from './money/SplitMoneyLine';
 import {
   AmountInput,
@@ -128,6 +129,15 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
       id: 'paid-from',
       text: 'Pick which of your accounts paid. Only you see it; your friends see the expense as they always have.',
     },
+  });
+
+  // Outside groups: a friend who isn't in your list yet can be added right here.
+  const addWith = useAddFriend({
+    onAdded: (id) => {
+      if (!withIds.includes(id)) toggleFriend(id);
+      setSearch('');
+    },
+    prefill: search,
   });
 
   if (groupId && !group) return null;
@@ -258,23 +268,21 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
           {friends.length >= SEARCH_FROM ? (
             <SearchBox value={search} onChangeText={setSearch} style={{ marginBottom: space.sm }} />
           ) : null}
-          {friends.length === 0 ? (
-            <Text style={[ui.hint, { marginTop: 0 }]}>Add a friend first, under Friends on the home screen.</Text>
-          ) : (
-            <View style={s.chips}>
-              {filterFriends(friends, search, withIds).map((f) => (
-                <Chip
-                  key={f.id}
-                  label={f.name}
-                  selected={withIds.includes(f.id)}
-                  onPress={() => toggleFriend(f.id)}
-                  leading={<Avatar id={f.id} name={f.name} size={20} />}
-                />
-              ))}
-            </View>
-          )}
+          <View style={s.chips}>
+            {filterFriends(friends, search, withIds).map((f) => (
+              <Chip
+                key={f.id}
+                label={f.name}
+                selected={withIds.includes(f.id)}
+                onPress={() => toggleFriend(f.id)}
+                leading={<Avatar id={f.id} name={f.name} size={20} />}
+              />
+            ))}
+            {addWith.chip}
+          </View>
+          {addWith.panel}
           {search.trim() && filterFriends(friends, search).length === 0 ? (
-            <Text style={[ui.hint, { marginTop: 0 }]}>No friend matches “{search.trim()}”.</Text>
+            <NoMatchAdd query={search} busy={addWith.busy} onAdd={() => addWith.addNamed(search)} />
           ) : null}
           {withError ? (
             <Text style={ui.error}>{withError}</Text>

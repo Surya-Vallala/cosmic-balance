@@ -462,10 +462,10 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
             <Row
               left={<OutsideBadge size={36} />}
               title="No group"
-              subtitle={friends.length ? 'Pick the friends who shared it' : 'Add a friend first'}
+              subtitle="Pick the friends who shared it, or add one"
               onPress={() => {
                 setPickGroup(false);
-                navigation.navigate(friends.length ? 'ExpenseForm' : 'FriendForm', {});
+                navigation.navigate('ExpenseForm', {});
               }}
               last
             />

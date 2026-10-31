@@ -23,3 +23,15 @@ export function filterFriends<T extends { id: string; name: string; email?: stri
 
 /** Show a search box once a list is long enough to need one. */
 export const SEARCH_FROM = 3;
+
+/** Your friend with exactly this name (ignoring case and extra spaces), if you have one. */
+export function friendNamed<T extends { id: string; name: string; requesting?: boolean }>(
+  people: Record<string, T>,
+  meId: string | null,
+  name: string,
+): T | undefined {
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  const n = norm(name);
+  if (!n) return undefined;
+  return Object.values(people).find((p) => p.id !== meId && !p.requesting && norm(p.name) === n);
+}

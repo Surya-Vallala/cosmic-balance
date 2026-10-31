@@ -8,6 +8,7 @@ import { filterFriends, SEARCH_FROM } from '../search';
 import { uid, useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { CurrencyCode } from '../types';
+import { NoMatchAdd, useAddFriend } from '../add-friend';
 import { useSplitMoney } from './money/SplitMoneyLine';
 import {
   AmountInput,
@@ -17,7 +18,6 @@ import {
   ConfirmButton,
   CurrencyPicker,
   DateField,
-  Empty,
   Field,
   List,
   Row,
@@ -74,6 +74,20 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
     },
   });
 
+  // A friend who isn't in your list yet: add them right here (a name is enough).
+  const pickNew = (side: 'from' | 'to') => (id: string) => {
+    if (side === 'from') {
+      setFrom(id);
+      if (to === id || to === '' || to === from) setTo(meId);
+    } else {
+      setTo(id);
+      if (from === id || from === to) setFrom(meId);
+    }
+    setSearch('');
+  };
+  const addGiver = useAddFriend({ onAdded: pickNew('from'), prefill: search });
+  const addReceiver = useAddFriend({ onAdded: pickNew('to'), prefill: search });
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: existing?.kind === 'settlement' ? 'Overall settle-up' : existing ? 'Edit transfer' : 'Transfer money',
@@ -124,21 +138,9 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
     );
   }
 
-  if (people.length < 2) {
-    return (
-      <Screen>
-        <Empty
-          title="Add a friend first"
-          body="Transfers are between you and a friend. Add someone, then come back."
-          action={<Button title="Add a friend" onPress={() => navigation.replace('FriendForm', {})} />}
-        />
-      </Screen>
-    );
-  }
-
   const amount = parseRupees(amountText);
   const same = from === to;
-  const valid = !!amount && !same && !!to;
+  const valid = !!amount && !same && !!to && !!from;
 
   const save = () => {
     setTouched(true);
@@ -168,18 +170,22 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
   const shownFor = (value: string) => filterFriends(asPeople, search, [meId, value]).map((p) => p.id);
   const nobody = !!search.trim() && filterFriends(asPeople.slice(1), search).length === 0;
 
-  const chooser = (value: string, onChange: (v: string) => void) => (
-    <View style={s.chips}>
-      {shownFor(value).map((id) => (
-        <Chip
-          key={id}
-          label={nameOf(id)}
-          selected={value === id}
-          onPress={() => onChange(id)}
-          leading={<Avatar id={id} name={state.people[id]?.name ?? '?'} size={20} />}
-        />
-      ))}
-    </View>
+  const chooser = (value: string, onChange: (v: string) => void, add: typeof addGiver) => (
+    <>
+      <View style={s.chips}>
+        {shownFor(value).map((id) => (
+          <Chip
+            key={id}
+            label={nameOf(id)}
+            selected={value === id}
+            onPress={() => onChange(id)}
+            leading={<Avatar id={id} name={state.people[id]?.name ?? '?'} size={20} />}
+          />
+        ))}
+        {add.chip}
+      </View>
+      {add.panel}
+    </>
   );
 
   return (
@@ -192,14 +198,27 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
       {friendCount >= SEARCH_FROM ? (
         <SearchBox value={search} onChangeText={setSearch} style={{ marginTop: space.lg }} />
       ) : null}
-      {nobody ? <Text style={ui.hint}>No friend matches “{search.trim()}”.</Text> : null}
+      {nobody ? (
+        <NoMatchAdd
+          query={search}
+          busy={addReceiver.busy || addGiver.busy}
+          // Usually you gave it: they're the one who received it.
+          onAdd={() => (from === meId ? addReceiver : addGiver).addNamed(search)}
+        />
+      ) : null}
+      {friendCount === 0 ? (
+        <Text style={[ui.hint, { marginTop: space.md }]}>
+          Add the friend with “+ Add a friend”: a name is enough, they don’t need Cosmic Balance.
+        </Text>
+      ) : null}
 
       <Text style={[ui.label, { marginTop: space.lg }]}>Who gave the money</Text>
-      {chooser(from, setFrom)}
+      {chooser(from, setFrom, addGiver)}
 
       <Text style={[ui.label, { marginTop: space.xl }]}>Who received it</Text>
-      {chooser(to, setTo)}
+      {chooser(to, setTo, addReceiver)}
       {same ? <Text style={ui.error}>Pick two different people.</Text> : null}
+      {touched && !to ? <Text style={ui.error}>Pick who received it.</Text> : null}
 
       <Text style={[ui.label, { marginTop: space.xl }]}>Amount</Text>
       <AmountInput
