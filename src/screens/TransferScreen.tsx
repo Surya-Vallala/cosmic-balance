@@ -75,13 +75,14 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
   });
 
   // A friend who isn't in your list yet: add them right here (a name is enough).
+  // Money between you and them: they gave it to you, or you gave it to them.
   const pickNew = (side: 'from' | 'to') => (id: string) => {
     if (side === 'from') {
       setFrom(id);
-      if (to === id || to === '' || to === from) setTo(meId);
+      setTo(meId);
     } else {
       setTo(id);
-      if (from === id || from === to) setFrom(meId);
+      setFrom(meId);
     }
     setSearch('');
   };
