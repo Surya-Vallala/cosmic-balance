@@ -363,3 +363,69 @@ export function subscribe(onChange: () => void): () => void {
 }
 
 export type { GroupRow };
+
+// ---------------------------------------------------------------------------
+// Money: your private accounts and spending (table money_items, version 8)
+
+export interface MoneyRow {
+  id: string;
+  kind: string;
+  data: unknown;
+  deleted: boolean;
+  updated_at: string;
+}
+
+/** A table that isn't there answers 404: the database is older than Money. */
+function moneyError(error: ErrorLike, status: number): CloudError {
+  if (status === 404 || MISSING_TABLE.has(error.code ?? '')) return new CloudError(NEEDS_DB_UPDATE, false, 'PGRST205');
+  return toCloudError(error, status);
+}
+
+/** The database hasn't been updated to version 8 yet. */
+export const isMissingTable = (e: unknown) => e instanceof CloudError && MISSING_TABLE.has(e.code ?? '');
+
+/** Your Money rows changed after `since` (all of them when null), oldest change first. */
+export async function fetchMoney(since: string | null): Promise<MoneyRow[]> {
+  const out: MoneyRow[] = [];
+  const PAGE = 1000;
+  // Page by (time of change, id) rather than by position, so a row changed
+  // while this runs can't shift the pages and be skipped.
+  let after: { at: string; id: string } | null = null;
+  for (;;) {
+    let q = supabase.from('money_items').select('id, kind, data, deleted, updated_at');
+    if (after) q = q.or(`updated_at.gt."${after.at}",and(updated_at.eq."${after.at}",id.gt."${after.id}")`);
+    else if (since) q = q.gt('updated_at', since);
+    let res;
+    try {
+      res = await q.order('updated_at').order('id').limit(PAGE);
+    } catch (e) {
+      throw toCloudError(e as ErrorLike, 0);
+    }
+    if (res.error) throw moneyError(res.error, res.status);
+    const rows = (res.data ?? []) as MoneyRow[];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+    const last = rows[rows.length - 1];
+    after = { at: last.updated_at, id: last.id };
+  }
+}
+
+/** Save Money rows (a deleted one is kept as a marker so your other phones hear about it). */
+export async function saveMoney(owner: string, items: { kind: string; id: string; data: unknown | null }[]): Promise<void> {
+  for (let i = 0; i < items.length; i += 200) {
+    const rows = items.slice(i, i + 200).map((it) => ({
+      owner,
+      id: it.id,
+      kind: it.kind,
+      data: it.data ?? {},
+      deleted: it.data === null,
+    }));
+    let res;
+    try {
+      res = await supabase.from('money_items').upsert(rows, { onConflict: 'owner,id' });
+    } catch (e) {
+      throw toCloudError(e as ErrorLike, 0);
+    }
+    if (res.error) throw moneyError(res.error, res.status);
+  }
+}

@@ -5,7 +5,7 @@
 // a group converts everything to its main currency at the rates the group set.
 
 import { formatMoney, paiseToInput, parseNumber, parseRupees } from './money';
-import type { AppState, CurrencyCode, Debt, Expense, Group, Id, Payment, SplitType, Totals, Transfer } from './types';
+import type { AppState, CurrencyCode, Debt, Expense, Group, Id, Payment, Person, SplitType, Totals, Transfer } from './types';
 
 /**
  * Split `total` in proportion to `weights` so the parts are whole hundredths
@@ -727,4 +727,57 @@ export function mostPickedFirst<T extends { id: Id; name: string }>(
 export function regularsFirst<T extends { id: Id; name: string }>(s: AppState, people: T[]): T[] {
   if (!s.meId) return people;
   return mostPickedFirst(people, pickCounts(s.meId, s.expenses, s.transfers), lastFriendActivity(s.meId, s.expenses, s.payments, s.transfers));
+}
+
+// ---------------------------------------------------------------------------
+// Leaving a group
+
+export interface LeaveCheck {
+  /** You may leave now. */
+  ok: boolean;
+  /** Nothing in the group's balances involves you. */
+  settled: boolean;
+  /** You created the group (it's handed on when you leave). */
+  creator: boolean;
+  /** Who looks after the group once you've left (when you created it). */
+  nextOwner?: Person;
+  /** Why not, in words. */
+  reason?: string;
+  /** The group has expenses or payments. */
+  hasHistory: boolean;
+}
+
+/**
+ * Can I leave this group (shared mode)? Once nothing in its balances involves
+ * me: my old expenses stay and everyone else keeps its history. If I created
+ * it, the next member with an account looks after it; with nobody to hand it
+ * on to, it can only be deleted. (The database checks the same.)
+ */
+export function canLeaveGroup(s: AppState, groupId: Id, myUserId: string | null): LeaveCheck {
+  const group = s.groups.find((g) => g.id === groupId);
+  const me = s.meId;
+  if (!group || !me) return { ok: false, settled: false, creator: false, hasHistory: false };
+  const hasHistory = s.expenses.some((e) => e.groupId === groupId) || s.payments.some((p) => p.groupId === groupId);
+  const settled = !groupDebts(group, s.expenses, s.payments).some((d) => d.from === me || d.to === me);
+  const creator = !!group.createdBy && group.createdBy === myUserId;
+  const nextOwner = creator
+    ? group.memberIds
+        .filter((id) => id !== me)
+        .map((id) => s.people[id])
+        .find((p): p is Person => !!p?.userId)
+    : undefined;
+  if (creator && !nextOwner) {
+    return { ok: false, settled, creator, hasHistory, reason: 'Nobody else here has joined yet, so it can’t be handed on.' };
+  }
+  if (!settled) {
+    return {
+      ok: false,
+      settled,
+      creator,
+      nextOwner,
+      hasHistory,
+      reason: 'Settle up first: once you’re settled up here you can leave, and the group disappears from your list.',
+    };
+  }
+  return { ok: true, settled, creator, nextOwner, hasHistory };
 }

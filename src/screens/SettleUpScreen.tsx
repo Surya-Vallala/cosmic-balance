@@ -2,12 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Linking, Share, StyleSheet, Text, View } from 'react-native';
 import { Pulsar, Supernova } from '../cosmos';
 import { relativeDay } from '../dates';
-import { fromBase, groupCurrencies, toBase } from '../logic';
+import { fromBase, groupCurrencies, groupDebts, toBase } from '../logic';
 import { formatMoney, paiseToDecimalString, paiseToInput, parseRupees } from '../money';
 import type { ScreenProps } from '../navigation';
 import { uid, useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { CurrencyCode } from '../types';
+import { useSplitMoney } from './money/SplitMoneyLine';
 import {
   AmountInput,
   Avatar,
@@ -27,7 +28,15 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
   const meId = state.meId!;
   const { groupId, paymentId } = route.params;
   const group = state.groups.find((g) => g.id === groupId);
-  const members = group?.memberIds ?? [];
+  // Members, and anyone who left but still has a balance here.
+  const members = group
+    ? [
+        ...group.memberIds,
+        ...[...new Set(groupDebts(group, state.expenses, state.payments).flatMap((d) => [d.from, d.to]))].filter(
+          (id) => !group.memberIds.includes(id),
+        ),
+      ]
+    : [];
   const base = group?.baseCurrency ?? 'INR';
   const suggestedBase = route.params.amount; // what's owed, in the main currency
 
@@ -40,6 +49,30 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
   const [touched, setTouched] = useState(false);
   const [upiMessage, setUpiMessage] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
+  // Money (only you see it): the account it came into or went from.
+  const viewing = paymentId ? state.payments.find((x) => x.id === paymentId) : undefined;
+  const parsed = parseRupees(amountText);
+  const mine = viewing ?? { from, to, amount: parsed, currency: cur, date: null as string | null };
+  const other = mine.from === meId ? mine.to : mine.from;
+  const otherName = state.people[other]?.name ?? 'they';
+  const incoming = mine.to === meId && mine.from !== meId;
+  const moneyLine = useSplitMoney({
+    linkKey: viewing ? `p:${viewing.id}` : null,
+    date: viewing?.date,
+    groupId,
+    group,
+    direction: viewing?.settlementId || mine.from === mine.to ? null : mine.from === meId ? 'out' : incoming ? 'in' : null,
+    currency: mine.currency,
+    amount: mine.amount,
+    immediate: !!viewing,
+    tip: {
+      id: 'received-into',
+      text: incoming
+        ? `Pick the account ${otherName}’s money came into. It isn’t counted as income, and ${otherName} doesn’t see it.`
+        : `Pick the account you paid from. It isn’t counted as spending, and ${otherName} doesn’t see it.`,
+    },
+  });
 
   useEffect(() => {
     if (!done) return;
@@ -76,6 +109,7 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
         <Text style={s.meta}>
           {relativeDay(p.date)} in {group?.name ?? 'a deleted group'}
         </Text>
+        {moneyLine.element}
         {p.settlementId ? (
           <View style={{ marginTop: space.xxl }}>
             <Text style={[s.meta, { marginBottom: space.md }]}>
@@ -95,6 +129,7 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
               confirmTitle="Tap again to delete"
               onConfirm={() => {
                 dispatch({ type: 'deletePayment', id: p.id });
+                moneyLine.forget(`p:${p.id}`);
                 navigation.goBack();
               }}
             />
@@ -131,10 +166,11 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
   const record = () => {
     setTouched(true);
     if (!valid || !amount) return;
+    const id = uid();
     dispatch({
       type: 'addPayment',
       payment: {
-        id: uid(),
+        id,
         groupId: group.id,
         from,
         to,
@@ -144,6 +180,7 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
         date: new Date().toISOString(),
       },
     });
+    moneyLine.save(`p:${id}`);
     setDone(true);
   };
 
@@ -253,6 +290,8 @@ export default function SettleUpScreen({ navigation, route }: ScreenProps<'Settl
       ) : suggestedBase && currencies.length === 1 ? (
         <Text style={ui.hint}>Suggested from the group’s balances: {formatMoney(suggestedBase, base)}</Text>
       ) : null}
+
+      {moneyLine.element}
 
       {from === meId && to && !samePerson ? (
         payee?.upiId ? (

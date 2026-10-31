@@ -17,6 +17,7 @@ import { filterFriends, SEARCH_FROM } from '../search';
 import { uid, useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { CurrencyCode, SplitType } from '../types';
+import { useSplitMoney } from './money/SplitMoneyLine';
 import {
   AmountInput,
   Avatar,
@@ -65,8 +66,15 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
       ? expensePeople(existing).filter((id) => id !== meId)
       : (route.params.with ?? '').split(',').filter((id) => id && id !== meId && state.people[id]),
   );
-  const members = group ? group.memberIds : [meId, ...withIds];
+  // People who left the group stay in its old expenses.
+  const members = group
+    ? [...group.memberIds, ...(existing ? expensePeople(existing).filter((id) => !group.memberIds.includes(id)) : [])]
+    : [meId, ...withIds];
   const currencies = group ? groupCurrencies(group) : CURRENCY_CODES;
+  // Someone in it left the group once settled up: what they paid and owe here stays as it is.
+  const leftIds = mode === 'cloud' && group && existing ? expensePeople(existing).filter((id) => !group.memberIds.includes(id)) : [];
+  const leftNames = leftIds.map((id) => state.people[id]?.name ?? 'Someone').join(' and ');
+  const [leftError, setLeftError] = useState<string | null>(null);
 
   const [description, setDescription] = useState(existing?.description ?? '');
   // The day it happened: today unless changed.
@@ -103,6 +111,24 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
     : amount
       ? { [paidBy]: amount }
       : null;
+
+  // Money (only you see it): which of your accounts paid, and what your share counts as.
+  const iPay = multiPay ? (parseRupees(payerInputs[meId] ?? '') ?? 0) > 0 : paidBy === meId;
+  const myShare = result?.ok ? (result.shares[meId] ?? 0) > 0 : inSplit(splitType, members, selected, inputs).includes(meId);
+  const moneyLine = useSplitMoney({
+    linkKey: existing ? `e:${existing.id}` : null,
+    date: fromDay(day, existing?.date),
+    groupId: group?.id ?? null,
+    group,
+    direction: iPay ? 'out' : null,
+    currency: cur,
+    amount: payers?.[meId] ?? null,
+    share: myShare,
+    tip: {
+      id: 'paid-from',
+      text: 'Pick which of your accounts paid. Only you see it; your friends see the expense as they always have.',
+    },
+  });
 
   if (groupId && !group) return null;
 
@@ -154,10 +180,15 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
   const save = () => {
     setTouched(true);
     if (!canSave || !result?.ok || !amount || !payers) return;
+    if (existing && leftIds.some((x) => cur !== existing.currency || (payers[x] ?? 0) !== (existing.payers[x] ?? 0) || (result.shares[x] ?? 0) !== (existing.shares[x] ?? 0))) {
+      setLeftError(`${leftNames} left this group after settling up, so what they paid or owe here can’t change. You can still change the description, date and remarks.`);
+      return;
+    }
+    const id = existing?.id ?? uid();
     dispatch({
       type: 'saveExpense',
       expense: {
-        id: existing?.id ?? uid(),
+        id,
         groupId: group?.id ?? null,
         description: description.trim(),
         currency: cur,
@@ -173,6 +204,7 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
         updatedAt: new Date().toISOString(),
       },
     });
+    moneyLine.save(`e:${id}`);
     navigation.goBack();
   };
 
@@ -182,6 +214,11 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
 
   return (
     <Screen footer={<Button title={existing ? 'Save changes' : 'Add expense'} onPress={save} disabled={touched && !canSave} />}>
+      {leftIds.length ? (
+        <Text style={[ui.hint, { marginTop: 0, marginBottom: space.lg, color: leftError ? colors.owe : colors.muted }]} accessibilityRole="alert">
+          {leftError ?? `${leftNames} left this group after settling up, so the amount and who paid or shared stay as they are.`}
+        </Text>
+      ) : null}
       <Field
         label="What was it for?"
         value={description}
@@ -301,6 +338,8 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
         </>
       ) : null}
 
+      {moneyLine.element}
+
       <Text style={[ui.label, { marginTop: space.xl }]}>Split</Text>
       <Segmented<SplitType>
         value={splitType}
@@ -414,13 +453,14 @@ export default function ExpenseFormScreen({ navigation, route }: ScreenProps<'Ex
         />
       </View>
 
-      {existing ? (
+      {existing && !leftIds.length ? (
         <View style={{ marginTop: space.lg }}>
           <ConfirmButton
             title="Delete expense"
             confirmTitle="Tap again to delete"
             onConfirm={() => {
               dispatch({ type: 'deleteExpense', id: existing.id });
+              moneyLine.forget(`e:${existing.id}`);
               navigation.goBack();
             }}
           />

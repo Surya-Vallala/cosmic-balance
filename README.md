@@ -38,6 +38,23 @@ There are two ways to use it:
 - **Sample data** on the welcome screen so you can explore before adding real expenses.
 - **Export to spreadsheet** (Your profile): a CSV of every expense, payment and transfer, for backups.
 - **About page**: developed by Tesseract Studio, with the contact email.
+- **Leave a group once you're settled up**: the group's screen (or Edit group) shows **Leave group** when nothing you owe or are owed is left in it. It goes from your list; the people still in it keep its history (with your name on your old expenses) and are told you left. If you created it, the next person in it with an account looks after it from then on.
+
+## Money (your own accounts, only you see it)
+
+Off until you turn it on (the one-time **New in Cosmic Balance** card, or Your profile → Money). With it off, the app is exactly as before. Turned on, a bar at the bottom adds four tabs next to **Split**:
+
+- **Money**: your income and spending day by day, with a **Calendar**, the **Monthly** totals of the year, and a **Total** summary. **+** records income, an expense, or a transfer between your accounts (in different currencies too): an amount keypad that adds up (`850+120−50`), a date, a category and sub-category (add new ones right from the form), the account, a note (notes you used before are suggested) and more details. **Repeat** makes rent or an EMI come back every day / week / month / year. **Search** finds any word in notes, details, categories, accounts, groups or people and totals what it finds. **Filter** ticks income and expense categories, accounts and groups.
+- **Stats**: where the month went, by category and sub-category, against a monthly budget.
+- **Accounts**: cash, bank accounts, cards, wallets, forex cards, investments, money lent, loans; each with its balance (a card or loan shows what you owe), plus **From Split**: what friends owe you and what you owe them.
+- **More**: categories, the usual account and category for each group, budget, main currency and rates, how Money looks, and a CSV export.
+
+Money and Split work together without changing what friends see:
+
+- **Your share counts as spending**, from the day you turned Money on (nothing earlier changes). Paying ₹36,000 rent for a flat of three is ₹12,000 spent and ₹24,000 lent; settle-ups aren't income or spending.
+- Expense, settle-up and transfer forms get one line, **Paid from** / **Received into**, once you have an account. It remembers your choice for each group, and **Don't track** is always there. What friends record (Ravi paid you back) waits under **To sort out** until you say which account it came into.
+
+Privacy: Money is saved to your account in rows only you can read or change (shared mode), or only on the phone (phone-only mode). Friends never see your accounts, categories, budget or which account paid.
 
 ## Sharing with friends
 
@@ -57,7 +74,7 @@ There are two ways to use it:
 
 **Or share the group's link** (good for a whole WhatsApp group): in the group, tap **Invite friends**, then **Share**. Anyone who opens it signs in and taps **Ask to join**: they see only the group's name, who runs it and how many are in it. The person who created the group gets a notification and an **Asking to join** list in the group, and taps **Let in** or **Decline**. If they were already added by name, **Let in** asks which name is theirs, and everything recorded for it becomes theirs. Nobody gets in without the creator's approval, so a link forwarded to the wrong chat is harmless; **Reset invite link** in the group's settings retires it anyway.
 
-Who sees what: you see a group only if you're in it (or once you're let in). A transfer outside groups is seen only by the two people in it (and whoever recorded it). Friends added by Gmail see each other in their Friends lists. Only the person who created a group can delete it or let people in through its link; anyone else can leave a group they have no expenses in.
+Who sees what: you see a group only if you're in it (or once you're let in). A transfer outside groups is seen only by the two people in it (and whoever recorded it). Friends added by Gmail see each other in their Friends lists. Only the person who created a group can delete it or let people in through its link; anyone can leave a group once they're settled up in it.
 
 **Without a connection**, changes are kept on the phone and sent as soon as it's back online, even if the app was closed in between. A strip at the top says how many are waiting.
 
@@ -146,11 +163,15 @@ src/
   theme.ts, ui.tsx       colours, type, shared components
   cosmos.tsx             Libra, black hole, pulsar and supernova illustrations
   export.ts              spreadsheet (CSV) export
+  pfm/                   Money: types, sums (logic.ts), changes (data.ts), saving and
+                         syncing your private rows (store.tsx), shared pieces (ui.tsx)
   screens/               Welcome, Join, Onboarding, Home, Group, GroupSummary,
                          GroupForm, ExpenseForm, SettleUp, Friend, FriendForm,
                          Transfer, SettleAll, Notifications, About
+  screens/money/         Money, Record, Search, Stats, Accounts, Account, More,
+                         Categories, Repeats, Groups in Money, To sort out, setup
 supabase/
-  schema.sql             tables, access rules, invites, join requests, notifications (re-run to upgrade)
+  schema.sql             tables, access rules, invites, join requests, notifications, Money (re-run to upgrade)
   functions/send-push/   delivers notifications to phones (Web Push, no libraries)
   test_rls.py            checks the access rules against a local Postgres
   test_upgrade.py        upgrading databases made with versions 1 and 3
@@ -165,11 +186,13 @@ Free Supabase projects pause after about a week with no activity. The workflow i
 ```bash
 npx tsc --noEmit                 # type-check
 npx expo lint                    # lint
-npx vitest run                   # 111 tests: splits, payers, currencies, rounding, balances, summary,
-                                 # transfers, removing friends, database rows, screen addresses, messages,
-                                 # dates, remarks, friend search, sorting, pictures
-python3 supabase/test_rls.py     # 235 checks of who can see and change what, join requests, notifications,
-                                 # test notifications, profile pictures and friend removal (needs Postgres 16 on :5433)
+npx vitest run                   # 190+ tests: splits, payers, currencies, rounding, balances, summary,
+                                 # transfers, removing friends, leaving groups, database rows, screen addresses,
+                                 # messages, dates, remarks, friend search, sorting, pictures, and Money
+                                 # (balances, shares, filters, stats, repeats, the keypad, syncing changes, export)
+python3 supabase/test_rls.py     # 260+ checks of who can see and change what, join requests, notifications,
+                                 # test notifications, profile pictures, friend removal, leaving a settled group
+                                 # and Money's private rows (needs Postgres 16 on :5433)
 python3 supabase/test_upgrade.py # upgrading databases made with versions 1, 3, 4 and 5
 # supabase/functions/send-push/test.mts: Web Push encryption and signing checked against the
 # reference libraries, and delivery through a local database (see the top of the file)

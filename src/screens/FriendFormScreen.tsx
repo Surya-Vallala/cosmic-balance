@@ -1,10 +1,11 @@
 import React, { useLayoutEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Switch, Text, View } from 'react-native';
 import { useAuth } from '../auth';
 import { isEmail } from '../emails';
 import { exportCsv } from '../export';
 import type { ScreenProps } from '../navigation';
 import { MyFriendLink } from '../friend-requests';
+import { useMoney } from '../pfm/store';
 import { PushCard } from '../notify-ui';
 import { canPickPhoto, PhotoFramer, pickPhoto } from '../photo-picker';
 import { uid, useStore } from '../store';
@@ -35,6 +36,19 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
   const [photoNote, setPhotoNote] = useState<string | null>(null);
   const [photoBusy, setPhotoBusy] = useState(false);
   const hasPhoto = !!(existing && state.photos?.[existing.id]);
+  const money = useMoney();
+  const [moneyNote, setMoneyNote] = useState<string | null>(null);
+  const switchMoney = (on: boolean) => {
+    if (on) {
+      setMoneyNote(null);
+      // The first time, the short tour and setting up accounts.
+      if (!money.m.settings.startedOn) navigation.navigate('MoneySetup', { step: 1 });
+      else money.setSettings({ enabled: true, introSeen: true });
+    } else {
+      money.setSettings({ enabled: false, introSeen: true });
+      setMoneyNote('Money is off. Nothing is deleted: turn it on again to carry on where you left off.');
+    }
+  };
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -225,6 +239,38 @@ export default function FriendFormScreen({ navigation, route }: ScreenProps<'Fri
 
       {isMe ? (
         <>
+          <SectionTitle>Money</SectionTitle>
+          <List>
+            <View style={[s.switchRow, money.on && s.switchDivider]}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.switchTitle}>Money</Text>
+                <Text style={s.switchSub}>Your own accounts, income and spending. Only you see it.</Text>
+              </View>
+              <Switch
+                value={money.on}
+                onValueChange={switchMoney}
+                disabled={!money.ready}
+                accessibilityLabel="Money"
+                trackColor={{ true: colors.star, false: colors.line }}
+                thumbColor={colors.text}
+                // react-native-web uses its own prop names for the "on" colours
+                {...({ activeThumbColor: colors.text, activeTrackColor: colors.star } as object)}
+              />
+            </View>
+            {money.on ? (
+              <Row
+                title="Money settings"
+                subtitle="Accounts, categories, budget and more"
+                right={<Text style={{ color: colors.muted, fontSize: 22 }}>›</Text>}
+                onPress={() => navigation.navigate('More')}
+                last
+              />
+            ) : null}
+          </List>
+          {moneyNote ? <Text style={ui.hint}>{moneyNote}</Text> : !money.on && money.m.settings.startedOn ? (
+            <Text style={ui.hint}>Nothing is deleted while it’s off.</Text>
+          ) : null}
+
           {mode === 'cloud' ? (
             <>
               <SectionTitle>Account</SectionTitle>
@@ -302,4 +348,8 @@ const s = StyleSheet.create({
   photoHead: { alignItems: 'center', marginBottom: space.lg },
   photoButtons: { flexDirection: 'row', gap: space.sm, marginTop: space.md },
   photoHint: { fontSize: 12, color: colors.muted, marginTop: space.sm, textAlign: 'center' },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 12, paddingHorizontal: space.lg },
+  switchDivider: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.line },
+  switchTitle: { fontSize: 15, fontWeight: '600', color: colors.text },
+  switchSub: { fontSize: 12, lineHeight: 17, color: colors.muted, marginTop: 2 },
 });

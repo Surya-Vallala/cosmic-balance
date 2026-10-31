@@ -11,8 +11,10 @@ import { outsideExpenseItem, useNamesOf } from './OutsideScreen';
 import { TransactionList, type TxItem } from '../transaction-list';
 import { colors, fonts, space } from '../theme';
 import { Avatar, BalanceTag, Button, ConfirmButton, Empty, GroupBadge, List, Row, Screen, SectionTitle } from '../ui';
+import { useMaybeMoney } from '../pfm/store';
 
 export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'>) {
+  const money = useMaybeMoney();
   const { state, mode, dispatch, userId, fresh } = useStore();
   const namesOf = useNamesOf();
   const meId = state.meId!;
@@ -242,6 +244,8 @@ export default function FriendScreen({ navigation, route }: ScreenProps<'Friend'
         check={canRemoveFriend(state, friend.id, userId, mode === 'cloud')}
         name={friend.name}
         onRemove={() => {
+          // Money keeps the transfers with them it counted (they go from Split).
+          money?.keepHistory({ friendId: friend.id });
           dispatch({ type: 'removeFriend', id: friend.id });
           navigation.popToTop();
         }}

@@ -8,6 +8,7 @@ import { filterFriends, SEARCH_FROM } from '../search';
 import { uid, useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { CurrencyCode } from '../types';
+import { useSplitMoney } from './money/SplitMoneyLine';
 import {
   AmountInput,
   Avatar,
@@ -52,6 +53,27 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
   const [touched, setTouched] = useState(false);
   const [search, setSearch] = useState('');
 
+  // Money (only you see it): the account the money left or came into.
+  const settlement = existing?.kind === 'settlement' ? existing : undefined;
+  const who = settlement ?? { from, to, currency: cur, amount: parseRupees(amountText) };
+  const incoming = who.to === meId && who.from !== meId;
+  const otherName = state.people[incoming ? who.from : who.to]?.name ?? 'they';
+  const moneyLine = useSplitMoney({
+    linkKey: existing ? `t:${existing.id}` : null,
+    date: fromDay(day, existing?.date),
+    groupId: null,
+    direction: who.from === who.to ? null : who.from === meId ? 'out' : incoming ? 'in' : null,
+    currency: who.currency,
+    amount: who.amount,
+    immediate: !!settlement,
+    tip: {
+      id: 'received-into',
+      text: incoming
+        ? `Pick the account ${otherName}’s money came into. It isn’t counted as income, and ${otherName} doesn’t see it.`
+        : `Pick the account the money left from. It isn’t counted as spending, and ${otherName} doesn’t see it.`,
+    },
+  });
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: existing?.kind === 'settlement' ? 'Overall settle-up' : existing ? 'Edit transfer' : 'Transfer money',
@@ -68,6 +90,7 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
           {formatMoney(existing.amount, existing.currency)}
         </Text>
         <Text style={s.meta}>{relativeDay(existing.date)}, settling everything between them</Text>
+        {moneyLine.element}
         {cleared.length > 0 ? (
           <>
             <Text style={[ui.label, { marginTop: space.xl }]}>Groups it cleared</Text>
@@ -92,6 +115,7 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
             confirmTitle="Tap again: groups go back to unsettled"
             onConfirm={() => {
               dispatch({ type: 'deleteTransfer', id: existing.id });
+              moneyLine.forget(`t:${existing.id}`);
               navigation.goBack();
             }}
           />
@@ -119,10 +143,11 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
   const save = () => {
     setTouched(true);
     if (!valid || !amount) return;
+    const id = existing?.id ?? uid();
     dispatch({
       type: 'saveTransfer',
       transfer: {
-        id: existing?.id ?? uid(),
+        id,
         kind: 'transfer',
         from,
         to,
@@ -133,6 +158,7 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
         createdAt: existing?.createdAt ?? new Date().toISOString(),
       },
     });
+    moneyLine.save(`t:${id}`);
     navigation.goBack();
   };
 
@@ -201,6 +227,8 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
         />
       </View>
 
+      {moneyLine.element}
+
       {amount && !same && to ? (
         <Text style={s.effect}>
           {to === meId ? `You owe ${nameOf(from)}` : `${nameOf(to)} owes ${from === meId ? 'you' : nameOf(from)}`}{' '}
@@ -215,6 +243,7 @@ export default function TransferScreen({ navigation, route }: ScreenProps<'Trans
             confirmTitle="Tap again to delete"
             onConfirm={() => {
               dispatch({ type: 'deleteTransfer', id: existing.id });
+              moneyLine.forget(`t:${existing.id}`);
               navigation.goBack();
             }}
           />

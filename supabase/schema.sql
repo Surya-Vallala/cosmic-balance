@@ -1,4 +1,4 @@
--- Cosmic Balance database (version 7)
+-- Cosmic Balance database (version 8)
 -- Run this in Supabase (SQL Editor → New query → paste → Run).
 -- It is safe to run again, and running the newest version upgrades a
 -- database set up with an older one: everything is created only if missing
@@ -27,6 +27,10 @@
 --   push_subscriptions  the phones that asked for notifications.
 --   avatars    profile pictures: each person sets their own (a small square
 --              JPEG), seen by everyone who can see that person.
+--   group_leavers  people who left a group after settling up. Their old
+--              expenses stay, so the group still sees their name.
+--   money_items  Money: your own accounts, income and spending, one row per
+--              piece. Only you can read or change your rows.
 --
 -- Security: row level security on every table. You see a group only if you
 -- are a member, and its expenses and payments with it. You see people who
@@ -191,6 +195,36 @@ create table if not exists public.avatars (
   updated_at timestamptz not null default now()
 );
 
+-- Added in version 8: leaving a group once you're settled up. Your old
+-- expenses stay in it, so the people still in it keep seeing your name.
+-- Written only by set_group_members.
+create table if not exists public.group_leavers (
+  group_id uuid not null references public.groups (id) on delete cascade,
+  person_id uuid not null references public.people (id) on delete cascade,
+  left_at timestamptz not null default now(),
+  primary key (group_id, person_id)
+);
+create index if not exists group_leavers_person_idx on public.group_leavers (person_id);
+-- Who was in the group when they left: only they keep seeing the person who left
+-- (someone who joins later never shared the group with them).
+alter table public.group_leavers add column if not exists seen_by uuid[] not null default '{}';
+
+-- Added in version 8: Money. Your own accounts, categories, income and
+-- spending, and which of your accounts paid for things in groups: one row
+-- per piece, as JSON. Private: readable and writable by its owner only;
+-- friends in your groups never see any of it.
+create table if not exists public.money_items (
+  owner uuid not null default auth.uid() references auth.users (id) on delete cascade,
+  id text not null check (char_length(id) between 1 and 100),
+  kind text not null check (kind in ('settings', 'account', 'category', 'record', 'repeat', 'link')),
+  data jsonb not null default '{}'::jsonb check (octet_length(data::text) <= 10000),
+  -- A deleted piece stays as a marker for a while, so your other phones hear about it.
+  deleted boolean not null default false,
+  updated_at timestamptz not null default now(),
+  primary key (owner, id)
+);
+create index if not exists money_items_changed_idx on public.money_items (owner, updated_at);
+
 -- The key pair push services use to check notifications come from us. Made
 -- by the send-push function the first time it runs; the private half never
 -- leaves the database and that function.
@@ -282,6 +316,8 @@ returns boolean language sql stable security definer set search_path = public as
       or exists (select 1 from public.contacts c where c.owner = auth.uid() and c.person_id = p_person)
       or exists (select 1 from public.groups g
                  where public.my_person_id() = any (g.member_ids) and p_person = any (g.member_ids))
+      or exists (select 1 from public.group_leavers l
+                 where l.person_id = p_person and public.my_person_id() = any (l.seen_by))
       or exists (select 1 from public.transfers t
                  where (t.from_person = p_person or t.to_person = p_person)
                    and (t.created_by = auth.uid()
@@ -485,6 +521,29 @@ drop policy if exists contacts_select on public.contacts;
 create policy contacts_select on public.contacts for select to authenticated
   using (owner = auth.uid());
 
+alter table public.group_leavers enable row level security; -- no policies: functions only
+revoke all on public.group_leavers from anon, authenticated;
+
+-- Money is yours alone.
+alter table public.money_items enable row level security;
+drop policy if exists money_items_own on public.money_items;
+create policy money_items_own on public.money_items for all to authenticated
+  using (owner = auth.uid()) with check (owner = auth.uid());
+revoke all on public.money_items from anon, authenticated;
+grant select, insert, update, delete on public.money_items to authenticated;
+
+-- The server's clock orders the changes (a phone's clock can be off), so your
+-- other phones can ask for just what changed since they last looked.
+create or replace function public.money_touch()
+returns trigger language plpgsql set search_path = public as $$
+begin
+  new.updated_at := clock_timestamp();
+  return new;
+end $$;
+drop trigger if exists money_items_touch on public.money_items;
+create trigger money_items_touch before insert or update on public.money_items
+  for each row execute function public.money_touch();
+
 -- Only these columns can be changed directly. Group members change through
 -- set_group_members (so two people editing at once can't undo each other),
 -- emails through add_person_by_email / set_person_email.
@@ -553,6 +612,11 @@ begin
 
   update public.groups set member_ids = array_replace(member_ids, p_old, p_new), updated_at = now()
     where p_old = any (member_ids);
+  insert into public.group_leavers (group_id, person_id, left_at)
+    select l.group_id, p_new, l.left_at from public.group_leavers l where l.person_id = p_old
+    on conflict do nothing;
+  delete from public.group_leavers where person_id = p_old;
+  update public.group_leavers set seen_by = array_replace(seen_by, p_old, p_new) where p_old = any (seen_by);
   update public.expenses set data = replace(data::text, o, n)::jsonb, updated_at = now()
     where data::text like '%' || o || '%';
   update public.payments set data = replace(data::text, o, n)::jsonb
@@ -723,17 +787,118 @@ begin
   return real_person;
 end $$;
 
+-- Someone's balance in a group, in its main currency (positive: the group
+-- owes them), and how far the app's rounding can move it: an expense in
+-- another currency is converted to whole hundredths, a few per expense.
+-- `pairs` has the same for each other person, as the app works it out when
+-- debts aren't simplified (each sharer owes the payers in proportion to what
+-- they paid): {"<person>": [balance, slack]}.
+-- (Dropped first: what it returns changed while version 8 was being made.)
+drop function if exists public.group_balance(uuid, uuid);
+create or replace function public.group_balance(p_group uuid, p_person uuid,
+                                                out balance numeric, out slack numeric, out pairs jsonb)
+language plpgsql stable security definer set search_path = public as $$
+declare
+  g public.groups;
+  d jsonb;
+  pid text := p_person::text;
+  payers jsonb;
+  shares jsonb;
+  rate numeric;
+  total numeric;
+  paid numeric;
+  share numeric;
+  cur text;
+  x text;
+  v numeric;
+  s numeric;
+begin
+  balance := 0;
+  slack := 0;
+  pairs := '{}'::jsonb;
+  select * into g from public.groups where id = p_group;
+  for d in select e.data from public.expenses e where e.group_id = p_group and e.data::text like '%' || pid || '%' loop
+    payers := case when jsonb_typeof(d -> 'payers') = 'object' then d -> 'payers'
+                   when d ? 'paidBy' then jsonb_build_object(d ->> 'paidBy', d -> 'amount')
+                   else '{}'::jsonb end;
+    shares := case when jsonb_typeof(d -> 'shares') = 'object' then d -> 'shares' else '{}'::jsonb end;
+    cur := coalesce(d ->> 'currency', 'INR');
+    rate := case when cur = g.base_currency then 1 else coalesce((g.rates ->> cur)::numeric, 1) end;
+    paid := coalesce((payers ->> pid)::numeric, 0);
+    share := coalesce((shares ->> pid)::numeric, 0);
+    continue when paid = 0 and share = 0;
+    balance := balance + (paid - share) * rate;
+    if rate <> 1 then
+      slack := slack + 3;
+    end if;
+    select coalesce(sum(value::numeric), 0) into total from jsonb_each_text(payers);
+    continue when total <= 0;
+    -- Between you and each other person in it.
+    for x in select k from jsonb_object_keys(payers) k union select k from jsonb_object_keys(shares) k loop
+      continue when x = pid;
+      v := (coalesce((shares ->> x)::numeric, 0) * paid - share * coalesce((payers ->> x)::numeric, 0)) / total * rate;
+      s := case when rate <> 1 then 4 else 2 end;
+      pairs := pairs || jsonb_build_object(x, jsonb_build_array(
+        coalesce((pairs -> x ->> 0)::numeric, 0) + v, coalesce((pairs -> x ->> 1)::numeric, 0) + s));
+    end loop;
+  end loop;
+  for d in select p.data from public.payments p
+           where p.group_id = p_group and (p.data ->> 'from' = pid or p.data ->> 'to' = pid) loop
+    paid := coalesce((d ->> 'baseAmount')::numeric, (d ->> 'amount')::numeric, 0);
+    if d ->> 'from' = pid then
+      balance := balance + paid;
+      x := d ->> 'to';
+      v := paid;
+    else
+      balance := balance - paid;
+      x := d ->> 'from';
+      v := -paid;
+    end if;
+    continue when x is null or x = pid;
+    pairs := pairs || jsonb_build_object(x, jsonb_build_array(
+      coalesce((pairs -> x ->> 0)::numeric, 0) + v, coalesce((pairs -> x ->> 1)::numeric, 0)));
+  end loop;
+end $$;
+
+-- Whether someone is settled up in a group, the way the group works out debts.
+create or replace function public.is_settled(p_group uuid, p_person uuid)
+returns boolean language plpgsql stable security definer set search_path = public as $$
+declare
+  b record;
+  simplify boolean;
+begin
+  select simplify_debts into simplify from public.groups where id = p_group;
+  select * into b from public.group_balance(p_group, p_person);
+  if abs(b.balance) >= 0.5 + b.slack then
+    return false;
+  end if;
+  if not coalesce(simplify, true) then
+    return not exists (select 1 from jsonb_each(b.pairs) p
+                       where abs((p.value ->> 0)::numeric) >= 0.5 + (p.value ->> 1)::numeric);
+  end if;
+  return true;
+end $$;
+
 -- Add and remove group members in one step, against the group as it is now
 -- (so a friend who just joined isn't dropped by someone saving an older
--- copy). People in the group's expenses or payments can't be removed, and
--- the person who created the group stays in it. Removing yourself = leaving.
+-- copy). People in the group's expenses or payments can't be removed by
+-- others, and the person who created the group can't be removed.
+--
+-- Removing yourself = leaving. Since version 8 you can leave a group you've
+-- been part of once you're settled up in it: your old expenses stay, and the
+-- people still in it keep seeing your name. If you created the group, the
+-- next person in it with an account looks after it from then on.
 create or replace function public.set_group_members(p_group uuid, p_add uuid[] default '{}', p_remove uuid[] default '{}')
 returns uuid[] language plpgsql security definer set search_path = public as $$
 declare
   me uuid := public.my_person_id();
   g public.groups;
   creator_person uuid;
+  owner_account uuid;
   members uuid[];
+  in_history boolean;
+  leaving_with_history boolean := false;
+  creator_leaving boolean := false;
   x uuid;
 begin
   if me is null then
@@ -744,22 +909,29 @@ begin
     raise exception 'You are not in this group any more.';
   end if;
   select id into creator_person from public.people where user_id = g.created_by;
+  owner_account := g.created_by;
   members := g.member_ids;
 
   foreach x in array coalesce(p_remove, '{}'::uuid[]) loop
     continue when not (x = any (members));
-    if x = creator_person then
-      if x = me then
-        raise exception 'You created this group, so you can''t leave it. You can delete it instead.';
+    in_history := exists (select 1 from public.expenses e where e.group_id = p_group and e.data::text like '%' || x::text || '%')
+               or exists (select 1 from public.payments p where p.group_id = p_group and p.data::text like '%' || x::text || '%');
+    if x = me then
+      if in_history then
+        if not public.is_settled(p_group, me) then
+          raise exception 'You aren''t settled up in this group yet, so you can''t leave it. Settle up first.';
+        end if;
+        leaving_with_history := true;
       end if;
-      raise exception 'The person who created this group can''t be removed.';
-    end if;
-    if exists (select 1 from public.expenses e where e.group_id = p_group and e.data::text like '%' || x::text || '%')
-       or exists (select 1 from public.payments p where p.group_id = p_group and p.data::text like '%' || x::text || '%') then
-      raise exception '% % in this group''s expenses or payments, so % can''t be removed.',
-        case when x = me then 'You' else coalesce((select name from public.people where id = x), 'This person') end,
-        case when x = me then 'are' else 'is' end,
-        case when x = me then 'you' else 'they' end;
+      creator_leaving := x = creator_person;
+    else
+      if x = creator_person then
+        raise exception 'The person who created this group can''t be removed.';
+      end if;
+      if in_history then
+        raise exception '% is in this group''s expenses or payments, so they can''t be removed.',
+          coalesce((select name from public.people where id = x), 'This person');
+      end if;
     end if;
     members := array_remove(members, x);
   end loop;
@@ -770,10 +942,29 @@ begin
       raise exception 'You can only add your friends to a group.';
     end if;
     members := members || x;
+    delete from public.group_leavers where group_id = p_group and person_id = x;
   end loop;
 
-  if members is distinct from g.member_ids then
-    update public.groups set member_ids = members, updated_at = now() where id = p_group;
+  -- The person who created it is leaving: the next one still in it with an account looks after it.
+  if creator_leaving then
+    select p.user_id into owner_account
+      from unnest(members) with ordinality m(id, n)
+      join public.people p on p.id = m.id
+      where p.user_id is not null
+      order by m.n
+      limit 1;
+    if owner_account is null then
+      raise exception 'Nobody else in this group has joined Cosmic Balance, so it would be left with nobody. You can delete it instead.';
+    end if;
+  end if;
+  -- Leaving with history: the people still in it keep seeing your name on it.
+  if leaving_with_history then
+    insert into public.group_leavers (group_id, person_id, seen_by) values (p_group, me, members)
+    on conflict (group_id, person_id) do update set seen_by = excluded.seen_by, left_at = now();
+  end if;
+
+  if members is distinct from g.member_ids or owner_account is distinct from g.created_by then
+    update public.groups set member_ids = members, created_by = owner_account, updated_at = now() where id = p_group;
   end if;
   return members;
 end $$;
@@ -1502,6 +1693,10 @@ begin
   if cardinality(added) > 0 then
     perform public.notify_people(added, 'added', public.actor_name() || ' added you to ' || new.name, new.id);
   end if;
+  -- Someone left (removed themselves): tell the people still in it.
+  if tg_op = 'UPDATE' and public.my_person_id() = any (old.member_ids) and not (public.my_person_id() = any (new.member_ids)) then
+    perform public.notify_people(new.member_ids, 'left', public.actor_name() || ' left ' || new.name, new.id);
+  end if;
   return null;
 end $$;
 
@@ -1518,6 +1713,59 @@ end $$;
 drop trigger if exists expenses_keep_group on public.expenses;
 create trigger expenses_keep_group before update of group_id on public.expenses
   for each row execute function public.keep_expense_group();
+
+-- Someone who left a group once settled up stays settled: expenses and
+-- payments with them can't be added, and their part of old expenses can't
+-- change or be deleted (they can't see the group any more to agree to it).
+-- Other edits to those expenses, and deleting the whole group, are fine.
+create or replace function public.expense_part(d jsonb, p uuid)
+returns text language sql immutable set search_path = public as $$
+  select case when d is null or not (d::text like '%' || p::text || '%') then null
+              else concat_ws('|', coalesce(d ->> 'currency', 'INR'),
+                             coalesce(d -> 'payers' ->> p::text, case when d ->> 'paidBy' = p::text then d ->> 'amount' end, '0'),
+                             coalesce(d -> 'shares' ->> p::text, '0')) end
+$$;
+
+create or replace function public.keep_leavers_settled()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare
+  gid uuid;
+  x record;
+  before_d jsonb;
+  after_d jsonb;
+begin
+  if coalesce(current_setting('cosmic.quiet', true), '') = 'on' then
+    return coalesce(new, old);
+  end if;
+  gid := case when tg_op = 'DELETE' then old.group_id else new.group_id end;
+  if gid is null then
+    return coalesce(new, old);
+  end if;
+  -- One at a time with leaving (set_group_members holds the group row too).
+  perform 1 from public.groups where id = gid for share;
+  if not found then
+    return coalesce(new, old); -- the group itself is being deleted
+  end if;
+  before_d := case when tg_op = 'INSERT' then null else old.data end;
+  after_d := case when tg_op = 'DELETE' then null else new.data end;
+  for x in select l.person_id, p.name from public.group_leavers l
+           join public.groups g on g.id = l.group_id
+           left join public.people p on p.id = l.person_id
+           where l.group_id = gid and not (l.person_id = any (g.member_ids)) loop
+    if (tg_table_name = 'expenses' and public.expense_part(before_d, x.person_id) is distinct from public.expense_part(after_d, x.person_id))
+       or (tg_table_name = 'payments' and ((before_d ->> 'from') = x.person_id::text or (before_d ->> 'to') = x.person_id::text
+                                           or (after_d ->> 'from') = x.person_id::text or (after_d ->> 'to') = x.person_id::text)) then
+      raise exception '% left this group after settling up, so what they paid or owe here can''t change.', coalesce(x.name, 'Someone');
+    end if;
+  end loop;
+  return coalesce(new, old);
+end $$;
+drop trigger if exists expenses_leavers on public.expenses;
+create trigger expenses_leavers before insert or update or delete on public.expenses
+  for each row execute function public.keep_leavers_settled();
+drop trigger if exists payments_leavers on public.payments;
+create trigger payments_leavers before insert or update or delete on public.payments
+  for each row execute function public.keep_leavers_settled();
 
 drop trigger if exists expenses_notify on public.expenses;
 create trigger expenses_notify after insert or update or delete on public.expenses
@@ -1579,7 +1827,9 @@ on conflict (key) do nothing;
 revoke all on function public.merge_person(uuid, uuid), public.person_for_account(uuid),
   public.set_quiet(boolean), public.notify_people(uuid[], text, text, uuid, uuid), public.actor_name(),
   public.on_expense_change(), public.on_payment_change(), public.keep_expense_group(),
-  public.on_transfer_change(), public.on_group_change(), public.kick_push()
+  public.on_transfer_change(), public.on_group_change(), public.kick_push(),
+  public.group_balance(uuid, uuid), public.is_settled(uuid, uuid), public.money_touch(),
+  public.keep_leavers_settled(), public.expense_part(jsonb, uuid)
   from public, anon, authenticated;
 -- Only the send-push function (with the project's secret key) uses these.
 revoke all on function public.push_keys_get(), public.push_keys_init(text, jsonb),

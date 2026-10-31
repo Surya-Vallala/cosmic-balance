@@ -157,7 +157,10 @@ export default function GroupSummaryScreen({ navigation, route }: ScreenProps<'G
           <View key={m.id} style={[s.personRow, i < members.length - 1 && s.divider]}>
             <Avatar id={m.id} name={name(m.id)} size={26} />
             <View style={{ flex: 1, marginLeft: space.md, minWidth: 0 }}>
-              <Text style={s.personName}>{nameOf(m.id)}</Text>
+              <Text style={s.personName}>
+                {nameOf(m.id)}
+                {group.memberIds.includes(m.id) ? null : <Text style={s.left}> · Left the group</Text>}
+              </Text>
               <View style={s.stats}>
                 <Stat label="Paid" value={show(m.paid)} />
                 <Stat label="Share" value={show(m.share)} />
@@ -206,6 +209,7 @@ const s = StyleSheet.create({
   legendText: { fontSize: 12, color: colors.textSoft },
   personRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: space.lg },
   personName: { fontSize: 14, fontWeight: '600', color: colors.text },
+  left: { fontSize: 12, fontWeight: '400', color: colors.muted },
   stats: { flexDirection: 'row', flexWrap: 'wrap', columnGap: space.md, rowGap: 2, marginTop: 2 },
   statLabel: { fontSize: 10, color: colors.muted, fontWeight: '600' },
   statValue: { fontFamily: fonts.medium, fontSize: 12, color: colors.textSoft },

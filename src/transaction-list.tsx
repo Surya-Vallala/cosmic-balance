@@ -83,6 +83,7 @@ export function TransactionList({
               <Pressable
                 accessibilityRole="button"
                 accessibilityState={{ selected: onlyMine }}
+                aria-selected={onlyMine}
                 aria-pressed={onlyMine}
                 accessibilityLabel="Only ones I’m in"
                 onPress={() => setOnlyMine((v) => !v)}

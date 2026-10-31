@@ -185,7 +185,7 @@ check(err and 'expenses' in err, 'someone in the group’s expenses cannot be re
 err = error('priya', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (g, [], [me_s]))
 check(err and 'created' in err, 'the person who created the group cannot be removed')
 err = error('surya', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (g, [], [me_s]))
-check(err and 'delete it instead' in err, 'the creator is told to delete the group instead of leaving')
+check(err and 'settled up' in err, 'nobody can leave a group they owe money in (not even its creator)')
 check(fails('surya', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (g, [me_x], [])),
       'you can only add people you know')
 check(fails('stranger', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (g, [me_x], [])),
@@ -877,5 +877,145 @@ one('surya', 'select public.set_my_photo(%s)', (pic,))
 as_user('surya', 'delete from public.groups where id = %s', (g,), fetch=False)
 check(len(as_user('surya', 'select * from public.expenses')) == 0, 'deleting a group removes its expenses')
 check(one('surya', 'select count(*) from public.avatars') == 1, 'your picture stays with you')
+
+# --- Leaving a group once settled up (version 8) ----------------------------------------
+for n in ['lea', 'mo', 'zoe']:
+    sign_up(n)
+me_lea = one('lea', 'select id from public.ensure_me(%s)', ('Lea',))
+me_mo = one('mo', 'select id from public.ensure_me(%s)', ('Mo',))
+me_zoe = one('zoe', 'select id from public.ensure_me(%s)', ('Zoe',))
+one('lea', 'select id from public.add_person_by_email(%s)', ('mo@gmail.com',))
+one('lea', 'select id from public.add_person_by_email(%s)', ('zoe@gmail.com',))
+gz = str(uuid.uuid4())
+as_user('lea', 'insert into public.groups (id, name, member_ids, base_currency, rates) values (%s, %s, %s::uuid[], %s, %s)',
+        (gz, 'Bali', [me_lea, me_mo, me_zoe], 'INR', json.dumps({'THB': 2.5})), fetch=False)
+# Lea paid ฿3,000 for the three of them: ₹2,500 each at the group's rate.
+ez = str(uuid.uuid4())
+as_user('lea', 'insert into public.expenses (id, group_id, data) values (%s, %s, %s)', (ez, gz, json.dumps({
+    'id': ez, 'groupId': gz, 'description': 'Villa', 'currency': 'THB', 'amount': 300000,
+    'payers': {me_lea: 300000}, 'shares': {me_lea: 100000, me_mo: 100000, me_zoe: 100000},
+    'participants': [me_lea, me_mo, me_zoe], 'splitType': 'equal', 'inputs': {}, 'date': 'x', 'createdAt': 'x'})), fetch=False)
+check(names('mo') == ['Lea', 'Mo', 'Zoe'], 'Mo sees Zoe because they share a group')
+err = error('zoe', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gz, [], [me_zoe]))
+check(err and 'settled up' in err, 'you can’t leave a group while you owe money in it')
+
+
+def pay(who, frm, to, amount):
+    pid = str(uuid.uuid4())
+    as_user(who, 'insert into public.payments (id, group_id, data) values (%s, %s, %s)', (pid, gz, json.dumps({
+        'id': pid, 'groupId': gz, 'from': frm, 'to': to, 'currency': 'INR', 'amount': amount, 'baseAmount': amount, 'date': 'x'})),
+        fetch=False)
+
+
+superuser('delete from public.notifications')
+pay('zoe', me_zoe, me_lea, 249000)
+check(fails('zoe', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gz, [], [me_zoe])),
+      'not even ₹10 short')
+pay('zoe', me_zoe, me_lea, 1000)
+as_user('zoe', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gz, [], [me_zoe]))
+check(len(as_user('zoe', 'select * from public.groups')) == 0, 'once settled up, you can leave a group you spent in')
+check(len(as_user('zoe', 'select * from public.expenses')) == 0, 'and you no longer see its expenses')
+check(len(as_user('mo', 'select * from public.expenses where group_id = %s', (gz,))) == 1,
+      'the expense stays for everyone still in the group')
+check('Zoe' in names('mo'), 'and they still see who left (their name stays on old expenses)')
+left = [r[0] for who in ('lea', 'mo') for r in as_user(who, "select body from public.notifications where kind = 'left'")]
+check(left == ['Zoe left Bali', 'Zoe left Bali'], 'the people still in it are told')
+check(fails('zoe', 'select * from public.group_balance(%s, %s)', (gz, me_zoe)), 'balances are worked out only inside the database')
+# What was recorded for Zoe stays as it is.
+ez2 = str(uuid.uuid4())
+err = error('lea', 'insert into public.expenses (id, group_id, data) values (%s, %s, %s)', (ez2, gz, json.dumps({
+    'id': ez2, 'groupId': gz, 'description': 'Late snack', 'currency': 'INR', 'amount': 3000,
+    'payers': {me_lea: 3000}, 'shares': {me_lea: 1000, me_mo: 1000, me_zoe: 1000}})))
+check(err and 'left this group' in err, 'nobody can add an expense with someone who left')
+villa = json.loads(one('lea', 'select data::text from public.expenses where id = %s', (ez,)))
+as_user('lea', 'update public.expenses set data = %s where id = %s', (json.dumps({**villa, 'description': 'Villa in Ubud'}), ez), fetch=False)
+check(one('mo', "select data->>'description' from public.expenses where id = %s", (ez,)) == 'Villa in Ubud',
+      'other changes to an old expense with them are fine')
+check(fails('lea', 'update public.expenses set data = %s where id = %s',
+            (json.dumps({**villa, 'shares': {me_lea: 150000, me_mo: 100000, me_zoe: 50000}}), ez)),
+      'but their part of it can’t change')
+check(fails('lea', 'delete from public.expenses where id = %s returning id', (ez,)) or
+      one('lea', 'select count(*) from public.expenses where id = %s', (ez,)) == 1, 'or be deleted')
+err = error('lea', 'insert into public.payments (id, group_id, data) values (%s, %s, %s)', (str(uuid.uuid4()), gz, json.dumps({
+    'from': me_zoe, 'to': me_lea, 'currency': 'INR', 'amount': 100, 'baseAmount': 100})))
+check(err and 'left this group' in err, 'and no payment can be recorded with them')
+# Someone who joins later never sees them.
+one('lea', 'select id from public.add_person_by_email(%s)', ('stranger@gmail.com',))
+me_stranger = one('stranger', 'select id from public.ensure_me(%s)', ('Stranger',))
+as_user('lea', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gz, [me_stranger], []))
+check('Zoe' not in names('stranger'), 'someone who joins after they left doesn’t see them')
+check('Zoe' in names('mo'), 'while the people who were in it with them still do')
+as_user('lea', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gz, [], [me_stranger]))
+check(fails('stranger', 'select * from public.group_leavers'), 'nobody reads who left directly')
+err = error('lea', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gz, [], [me_lea]))
+check(err and 'settled up' in err, 'the creator can’t leave while friends still owe them')
+pay('mo', me_mo, me_lea, 250000)
+as_user('lea', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gz, [], [me_lea]))
+check(len(as_user('lea', 'select * from public.groups')) == 0, 'the creator can leave too, once settled up')
+check(one('mo', 'select created_by from public.groups where id = %s', (gz,)) == U['mo'],
+      'and the next person in it with an account looks after the group from then on')
+err = error('mo', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gz, [], [me_mo]))
+check(err and 'delete it instead' in err, 'the last person with an account is asked to delete the group instead')
+as_user('mo', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gz, [me_zoe], []))
+check(len(as_user('zoe', 'select * from public.groups')) == 1, 'someone who left can be added back')
+check(one('mo', 'select count(*) from public.expenses where group_id = %s', (gz,)) == 1, 'history is untouched by all this')
+
+# --- Leaving when debts aren't simplified, and handing a group on ----------------------------
+for n in ['pia', 'quin', 'rex', 'sol']:
+    sign_up(n)
+me_pia = one('pia', 'select id from public.ensure_me(%s)', ('Pia',))
+me_quin = one('quin', 'select id from public.ensure_me(%s)', ('Quin',))
+me_rex = one('rex', 'select id from public.ensure_me(%s)', ('Rex',))
+me_sol = one('sol', 'select id from public.ensure_me(%s)', ('Sol',))
+for n in ['quin', 'rex', 'sol']:
+    one('pia', 'select id from public.add_person_by_email(%s)', (f'{n}@gmail.com',))
+gp = str(uuid.uuid4())
+as_user('pia', 'insert into public.groups (id, name, member_ids, simplify_debts) values (%s, %s, %s::uuid[], false)',
+        (gp, 'Plain', [me_pia, me_quin, me_rex]), fetch=False)
+for payer, sharer in [(me_pia, me_quin), (me_quin, me_rex)]:
+    i = str(uuid.uuid4())
+    as_user('pia', 'insert into public.expenses (id, group_id, data) values (%s, %s, %s)', (i, gp, json.dumps({
+        'id': i, 'groupId': gp, 'description': 'x', 'currency': 'INR', 'amount': 30000,
+        'payers': {payer: 30000}, 'shares': {sharer: 30000}})), fetch=False)
+# Quin owes Pia ₹300 and Rex owes Quin ₹300: nothing overall, but two debts.
+err = error('quin', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gp, [], [me_quin]))
+check(err and 'settled up' in err, 'with debts not simplified, you can’t leave while you owe one friend and another owes you')
+as_user('pia', 'update public.groups set simplify_debts = true where id = %s', (gp,), fetch=False)
+as_user('quin', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gp, [], [me_quin]))
+check(len(as_user('quin', 'select * from public.groups where id = %s', (gp,))) == 0,
+      'simplified, those debts become Rex pays Pia, and Quin can leave')
+gq = str(uuid.uuid4())
+as_user('pia', 'insert into public.groups (id, name, member_ids) values (%s, %s, %s::uuid[])', (gq, 'Handover', [me_pia, me_rex, me_sol]), fetch=False)
+as_user('pia', 'select public.set_group_members(%s, %s::uuid[], %s::uuid[])', (gq, [], [me_pia, me_rex]))
+check(one('sol', 'select created_by from public.groups where id = %s', (gq,)) == U['sol'],
+      'a creator who leaves (taking someone out too) hands the group to someone still in it')
+
+# --- Money: private to each account (version 8) ------------------------------------------
+as_user('lea', "insert into public.money_items (id, kind, data, updated_at) values ('acc1', 'account', %s, '2000-01-01')",
+        (json.dumps({'id': 'acc1', 'name': 'HDFC Savings', 'opening': 1000000}),), fetch=False)
+as_user('lea', "insert into public.money_items (id, kind, data) values ('settings', 'settings', '{}')", fetch=False)
+rows = as_user('lea', 'select id, owner, updated_at > now() - interval \'1 hour\' from public.money_items order by id')
+check([r[0] for r in rows] == ['acc1', 'settings'] and all(r[1] == U['lea'] for r in rows), 'your Money rows are yours')
+check(all(r[2] for r in rows), 'the server sets the time of each change (not the phone)')
+check(len(as_user('mo', 'select * from public.money_items')) == 0, 'nobody else can read your Money, not even friends in your groups')
+check(fails('mo', "insert into public.money_items (owner, id, kind, data) values (%s, 'acc1', 'account', '{}')", (U['lea'],)),
+      'nobody else can write into your Money')
+as_user('mo', "update public.money_items set data = '{}'", fetch=False)
+as_user('mo', 'delete from public.money_items', fetch=False)
+check(one('lea', "select data->>'name' from public.money_items where id = 'acc1'") == 'HDFC Savings',
+      'or change or delete it')
+as_user('mo', "insert into public.money_items (id, kind, data) values ('acc1', 'account', '{\"name\": \"Mine\"}')", fetch=False)
+check(one('mo', "select data->>'name' from public.money_items where id = 'acc1'") == 'Mine' and
+      one('lea', "select data->>'name' from public.money_items where id = 'acc1'") == 'HDFC Savings',
+      'two people can use the same ids without touching each other’s')
+check(fails('lea', "insert into public.money_items (id, kind, data) values ('x', 'secret', '{}')"), 'only known kinds of rows')
+check(fails('lea', "insert into public.money_items (id, kind, data) values ('big', 'record', %s)", (json.dumps({'note': 'x' * 12000}),)),
+      'a row can’t be huge')
+check(fails_anon('select * from public.money_items') or len(as_user(None, 'select * from public.money_items', role='anon')) == 0,
+      'signed-out visitors see nothing')
+before = one('lea', "select updated_at from public.money_items where id = 'acc1'")
+as_user('lea', """insert into public.money_items (owner, id, kind, data) values (%s, 'acc1', 'account', '{"name": "HDFC"}')
+                  on conflict (owner, id) do update set data = excluded.data, deleted = excluded.deleted""", (U['lea'],), fetch=False)
+check(one('lea', "select updated_at from public.money_items where id = 'acc1'") > before, 'saving again moves its time on')
 
 print(f'\nAll {passed} checks passed.')

@@ -17,6 +17,7 @@ import {
   pairwiseDebts,
   simplifyDebts,
   canRemoveFriend,
+  canLeaveGroup,
 } from './logic';
 import { approxRate, formatMoney, formatRupees, parseRupees } from './money';
 import type { AppState, Expense, Group, Payment, Transfer } from './types';
@@ -587,3 +588,73 @@ describe('expenses outside groups', () => {
 function nonZeroOf(t: Record<string, number> | undefined) {
   return Object.entries(t ?? {}).filter(([, v]) => v !== 0);
 }
+
+describe('leaving a group', () => {
+  const group = (over: Partial<Group> = {}): Group => ({
+    id: 'g',
+    name: 'Flat',
+    memberIds: ['me', 'ravi', 'priya'],
+    simplifyDebts: true,
+    createdAt: '2026-01-01',
+    baseCurrency: 'INR',
+    rates: {},
+    createdBy: 'u-ravi',
+    ...over,
+  });
+  const state = (g: Group, expenses: Expense[] = [], payments: Payment[] = [], over: Partial<AppState> = {}): AppState => ({
+    version: 1,
+    meId: 'me',
+    people: {
+      me: { id: 'me', name: 'Surya', userId: 'u-me' },
+      ravi: { id: 'ravi', name: 'Ravi', userId: 'u-ravi' },
+      priya: { id: 'priya', name: 'Priya', userId: null },
+    },
+    groups: [g],
+    expenses,
+    payments,
+    transfers: [],
+    activity: [],
+    ...over,
+  });
+  const pay = (from: string, to: string, amount: number): Payment => ({
+    id: `${from}-${to}`,
+    groupId: 'g',
+    from,
+    to,
+    currency: 'INR',
+    amount,
+    baseAmount: amount,
+    date: '2026-10-02',
+  });
+  const rent = exp('rent', 3000, 'ravi', { me: 1000, ravi: 1000, priya: 1000 });
+
+  it('lets you leave once nothing in the group involves you', () => {
+    expect(canLeaveGroup(state(group()), 'g', 'u-me')).toMatchObject({ ok: true, settled: true, creator: false, hasHistory: false });
+    const owing = canLeaveGroup(state(group(), [rent]), 'g', 'u-me');
+    expect(owing).toMatchObject({ ok: false, settled: false, hasHistory: true });
+    expect(owing.reason).toMatch(/Settle up first/);
+    expect(canLeaveGroup(state(group(), [rent], [pay('me', 'ravi', 1000)]), 'g', 'u-me')).toMatchObject({ ok: true, hasHistory: true });
+  });
+
+  it('looks at who pays whom, not just your total, when debts aren’t simplified', () => {
+    // I'm owed by Priya and owe Ravi the same: even overall, but two debts involve me.
+    const a = exp('a', 2000, 'ravi', { me: 1000, ravi: 1000 });
+    const b = exp('b', 2000, 'me', { me: 1000, priya: 1000 });
+    expect(canLeaveGroup(state(group({ simplifyDebts: false }), [a, b]), 'g', 'u-me').ok).toBe(false);
+    expect(canLeaveGroup(state(group({ simplifyDebts: true }), [a, b]), 'g', 'u-me').ok).toBe(true);
+  });
+
+  it('hands the group on when its creator leaves, if someone else has an account', () => {
+    const mine = group({ createdBy: 'u-me' });
+    const r = canLeaveGroup(state(mine), 'g', 'u-me');
+    expect(r).toMatchObject({ ok: true, creator: true });
+    expect(r.nextOwner?.name).toBe('Ravi');
+    const alone = canLeaveGroup(state(group({ createdBy: 'u-me', memberIds: ['me', 'priya'] })), 'g', 'u-me');
+    expect(alone).toMatchObject({ ok: false, creator: true });
+    expect(alone.reason).toMatch(/Nobody else here has joined/);
+  });
+
+  it('knows nothing about groups it can’t find', () => {
+    expect(canLeaveGroup(state(group()), 'nope', 'u-me').ok).toBe(false);
+  });
+});

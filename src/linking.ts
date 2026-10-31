@@ -23,8 +23,21 @@ const SCREENS: Name[] = [
   'Join',
   'Notifications',
   'Outside',
+  'Money',
+  'Stats',
+  'Accounts',
+  'More',
+  'Record',
+  'MoneySearch',
+  'Account',
+  'AccountForm',
+  'Categories',
+  'SortOut',
+  'MoneySetup',
+  'Repeats',
+  'GroupMoney',
 ];
-const NUMBERS = new Set(['amount']);
+const NUMBERS = new Set(['amount', 'step']);
 
 export interface LinkState {
   routes: { name: Name; params?: Record<string, unknown> }[];

@@ -1,4 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useIsFocused } from '@react-navigation/native';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,10 +24,27 @@ import type { ScreenProps } from '../navigation';
 import { filterFriends, SEARCH_FROM } from '../search';
 import { IncomingFriendRequests } from '../friend-requests';
 import { Bell } from '../notify-ui';
+import { useMoney } from '../pfm/store';
+import { TabBar } from '../pfm/ui';
 import { useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { Totals } from '../types';
-import { Avatar, BalanceTag, Button, Empty, GroupBadge, List, Row, SearchBox, Segmented, SortBar, Starfield, TotalsTag, Wordmark } from '../ui';
+import {
+  Avatar,
+  BalanceTag,
+  Button,
+  Empty,
+  GroupBadge,
+  List,
+  Row,
+  SearchBox,
+  Segmented,
+  SortBar,
+  Sparkle,
+  Starfield,
+  TotalsTag,
+  Wordmark,
+} from '../ui';
 
 /** Size of group badges and avatars in the lists. */
 const LIST_ICON = 28;
@@ -78,6 +96,19 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
   const me = state.people[meId];
 
   const [pickGroup, setPickGroup] = useState(false);
+
+  // Money: the bottom bar once it's on, and a one-time card about it until answered.
+  const money = useMoney();
+  const focused = useIsFocused();
+  // Give your other phones' answer a moment to arrive before asking (shared mode).
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (!money.ready || !money.synced) return;
+    const t = setTimeout(() => setSettled(true), 1500);
+    return () => clearTimeout(t);
+  }, [money.ready, money.synced]);
+  const showIntro =
+    settled && focused && !pickGroup && !!state.meId && !money.m.settings.introSeen && !money.m.settings.enabled;
   const fb = useMemo(
     () => friendBalances(meId, state.groups, state.expenses, state.payments, state.transfers),
     [meId, state.groups, state.expenses, state.payments, state.transfers],
@@ -357,7 +388,7 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
       </View>
     </ScrollView>
 
-      <View style={[s.bar, { paddingBottom: space.sm + insets.bottom }]}>
+      <View style={[s.bar, { paddingBottom: space.sm + (money.on ? 0 : insets.bottom) }]}>
         <View style={{ flex: 1 }}>
           <Button title="Add expense" onPress={addExpense} />
         </View>
@@ -365,6 +396,50 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
           <Button title="Transfer money" variant="secondary" onPress={() => navigation.navigate('Transfer', {})} />
         </View>
       </View>
+      {money.on ? <TabBar current="Home" /> : null}
+
+      <Modal
+        visible={showIntro}
+        transparent
+        animationType="slide"
+        onRequestClose={() => money.setSettings({ introSeen: true })}
+      >
+        <View style={s.backdrop} />
+        <View style={[s.sheet, s.intro, { paddingBottom: insets.bottom + space.md }]} accessibilityViewIsModal>
+          <View style={s.sheetHandle} />
+          <View style={s.introLead}>
+            <Sparkle size={12} />
+            <Text style={s.introLeadText}>NEW IN COSMIC BALANCE</Text>
+          </View>
+          <Text style={s.introTitle} accessibilityRole="header">
+            Money: your own accounts, in the same app
+          </Text>
+          <Text style={s.introBody}>
+            Keep track of your bank, cards and cash, and see your income and spending by category.
+          </Text>
+          <View style={s.introPoints}>
+            <IntroPoint title="Private." text="Friends never see your accounts or what you spend." />
+            <IntroPoint title="Splitting hasn’t changed." text="Your groups and balances are just as they were." />
+            <IntroPoint title="Off until you turn it on." text="Say Not now and the app stays exactly as it is." />
+          </View>
+          <View style={{ gap: space.xs, marginTop: space.lg }}>
+            <Button
+              title="Turn it on and show me · 3 steps"
+              accessibilityLabel="Turn Money on and show me how, in 3 steps"
+              onPress={() => {
+                money.setSettings({ introSeen: true });
+                navigation.navigate('MoneySetup', { step: 1 });
+              }}
+            />
+            <Button
+              title="Not now, keep it as it is"
+              variant="ghost"
+              onPress={() => money.setSettings({ introSeen: true })}
+            />
+          </View>
+          <Text style={s.introFoot}>Turn it on or off any time from your profile, under Money.</Text>
+        </View>
+      </Modal>
 
       <Modal visible={pickGroup} transparent animationType="slide" onRequestClose={() => setPickGroup(false)}>
         <Pressable style={s.backdrop} onPress={() => setPickGroup(false)} accessibilityLabel="Close" />
@@ -397,6 +472,17 @@ export default function HomeScreen({ navigation }: ScreenProps<'Home'>) {
           </ScrollView>
         </View>
       </Modal>
+    </View>
+  );
+}
+
+function IntroPoint({ title, text }: { title: string; text: string }) {
+  return (
+    <View style={s.introPoint}>
+      <View style={s.introDot} />
+      <Text style={s.introPointText}>
+        <Text style={{ color: colors.text, fontWeight: '700' }}>{title}</Text> {text}
+      </Text>
     </View>
   );
 }
@@ -458,4 +544,14 @@ const s = StyleSheet.create({
   beam: { flexDirection: 'row', height: 4 },
   beamLegend: { flexDirection: 'row', justifyContent: 'space-between', marginTop: space.sm, gap: space.md },
   beamText: { fontSize: 12, fontWeight: '600', flexShrink: 1 },
+  intro: { paddingHorizontal: space.lg, maxHeight: '92%' },
+  introLead: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  introLeadText: { fontSize: 11, fontWeight: '700', color: colors.star, letterSpacing: 0.6 },
+  introTitle: { fontFamily: fonts.medium, fontSize: 20, lineHeight: 26, color: colors.text, marginTop: space.sm },
+  introBody: { fontSize: 14, lineHeight: 20, color: colors.textSoft, marginTop: space.sm },
+  introPoints: { gap: space.sm, marginTop: space.md },
+  introPoint: { flexDirection: 'row', gap: space.sm, alignItems: 'flex-start' },
+  introDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.star, marginTop: 7 },
+  introPointText: { flex: 1, fontSize: 14, lineHeight: 20, color: colors.textSoft },
+  introFoot: { fontSize: 12, lineHeight: 17, color: colors.muted, textAlign: 'center', marginTop: space.sm },
 });

@@ -57,12 +57,10 @@ export function buildCsv(state: AppState): string {
   return [header, ...body].map((r) => r.map(cell).join(',')).join('\n');
 }
 
-/** Save (web) or share (phone app) the CSV. Returns a short status message. */
-export async function exportCsv(state: AppState): Promise<string> {
-  const csv = buildCsv(state);
-  const filename = `cosmic-balance-${new Date().toISOString().slice(0, 10)}.csv`;
+/** Save (web) or share (phone app) a CSV file. Returns a short status message. */
+export async function saveCsv(csv: string, filename: string): Promise<string> {
   if (Platform.OS === 'web') {
-    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -75,4 +73,9 @@ export async function exportCsv(state: AppState): Promise<string> {
   }
   await Share.share({ title: filename, message: csv });
   return 'Shared. Save it somewhere safe, like your email or Drive.';
+}
+
+/** Save (web) or share (phone app) the CSV. Returns a short status message. */
+export async function exportCsv(state: AppState): Promise<string> {
+  return saveCsv(buildCsv(state), `cosmic-balance-${new Date().toISOString().slice(0, 10)}.csv`);
 }

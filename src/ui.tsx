@@ -474,6 +474,7 @@ export function SortBar<T extends string>({
             key={o.value}
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
+            aria-selected={on}
             accessibilityLabel={`Sort by ${o.label.toLowerCase()}`}
             onPress={() => onChange(o.value)}
             hitSlop={4}
@@ -566,6 +567,7 @@ export function Segmented<T extends string>({
             key={o.value}
             accessibilityRole="tab"
             accessibilityState={{ selected: on }}
+            aria-selected={on}
             onPress={() => onChange(o.value)}
             style={[styles.segment, on && styles.segmentOn]}
           >
@@ -681,6 +683,7 @@ export function CurrencyPicker({
                 key={code}
                 accessibilityRole="button"
                 accessibilityState={{ selected: on }}
+                aria-selected={on}
                 onPress={() => {
                   onSelect(code);
                   onClose();

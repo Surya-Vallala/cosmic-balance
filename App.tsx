@@ -30,6 +30,20 @@ import SettleAllScreen from './src/screens/SettleAllScreen';
 import SettleUpScreen from './src/screens/SettleUpScreen';
 import TransferScreen from './src/screens/TransferScreen';
 import WelcomeScreen from './src/screens/WelcomeScreen';
+import AccountFormScreen from './src/screens/money/AccountFormScreen';
+import AccountScreen from './src/screens/money/AccountScreen';
+import AccountsScreen from './src/screens/money/AccountsScreen';
+import CategoriesScreen from './src/screens/money/CategoriesScreen';
+import GroupMoneyScreen from './src/screens/money/GroupMoneyScreen';
+import MoneyScreen from './src/screens/money/MoneyScreen';
+import MoneySearchScreen from './src/screens/money/MoneySearchScreen';
+import MoneySetupScreen from './src/screens/money/MoneySetupScreen';
+import MoreScreen from './src/screens/money/MoreScreen';
+import RecordScreen from './src/screens/money/RecordScreen';
+import RepeatsScreen from './src/screens/money/RepeatsScreen';
+import SortOutScreen from './src/screens/money/SortOutScreen';
+import StatsScreen from './src/screens/money/StatsScreen';
+import { MoneyProvider } from './src/pfm/store';
 import { StoreProvider, useStore } from './src/store';
 import { reloadApp, useAppUpdate } from './src/update';
 import { colors, fonts, space } from './src/theme';
@@ -160,7 +174,20 @@ function OfflineStrip() {
 }
 
 /** Screens where something may be half typed: an update waits for a tap there. */
-const FORMS = new Set(['ExpenseForm', 'Transfer', 'SettleUp', 'SettleAll', 'GroupForm', 'FriendForm', 'Onboarding', 'Join']);
+const FORMS = new Set([
+  'ExpenseForm',
+  'Transfer',
+  'SettleUp',
+  'SettleAll',
+  'GroupForm',
+  'FriendForm',
+  'Onboarding',
+  'Join',
+  'Record',
+  'AccountForm',
+  'MoneySetup',
+  'Categories',
+]);
 const safeToReload = () => {
   const route = navigationRef.isReady() ? navigationRef.getCurrentRoute()?.name : undefined;
   return !route || !FORMS.has(route);
@@ -296,6 +323,20 @@ function AppNavigator() {
               <Stack.Screen name="Join" component={JoinScreen} options={{ title: 'Join a group' }} />
               <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />
               <Stack.Screen name="Outside" component={OutsideScreen} options={{ title: 'Outside groups' }} />
+              {/* Money: the tabs draw their own header and bottom bar. */}
+              <Stack.Screen name="Money" component={MoneyScreen} options={{ headerShown: false, animation: 'none', title: 'Money' }} />
+              <Stack.Screen name="Stats" component={StatsScreen} options={{ headerShown: false, animation: 'none', title: 'Stats' }} />
+              <Stack.Screen name="Accounts" component={AccountsScreen} options={{ headerShown: false, animation: 'none', title: 'Accounts' }} />
+              <Stack.Screen name="More" component={MoreScreen} options={{ headerShown: false, animation: 'none', title: 'More' }} />
+              <Stack.Screen name="Record" component={RecordScreen} options={{ title: 'Expense' }} />
+              <Stack.Screen name="MoneySearch" component={MoneySearchScreen} options={{ headerShown: false, title: 'Search' }} />
+              <Stack.Screen name="Account" component={AccountScreen} options={{ title: 'Account' }} />
+              <Stack.Screen name="AccountForm" component={AccountFormScreen} options={{ title: 'Account' }} />
+              <Stack.Screen name="Categories" component={CategoriesScreen} options={{ title: 'Categories' }} />
+              <Stack.Screen name="SortOut" component={SortOutScreen} options={{ title: 'To sort out' }} />
+              <Stack.Screen name="MoneySetup" component={MoneySetupScreen} options={{ headerShown: false, title: 'Money' }} />
+              <Stack.Screen name="Repeats" component={RepeatsScreen} options={{ title: 'Repeating transactions' }} />
+              <Stack.Screen name="GroupMoney" component={GroupMoneyScreen} options={{ title: 'Groups in Money' }} />
             </>
           )}
         </Stack.Navigator>
@@ -311,7 +352,9 @@ function Root() {
   if (mode === 'welcome') return <WelcomeScreen />;
   return (
     <StoreProvider key={`${mode}:${session?.user.id ?? ''}`} mode={mode} session={session}>
-      <AppNavigator />
+      <MoneyProvider>
+        <AppNavigator />
+      </MoneyProvider>
     </StoreProvider>
   );
 }

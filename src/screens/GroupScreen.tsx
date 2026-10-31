@@ -6,7 +6,7 @@ import { inviteLink } from '../cloud/config';
 import { shareNote, ShareLink, useInviteLinks } from '../invites';
 import { groupLinkMessage } from '../messages';
 import { shortDate } from '../dates';
-import { expensePeople, groupCurrencies, groupDebts, groupNet, groupSummary, toBase } from '../logic';
+import { canLeaveGroup, expensePeople, groupCurrencies, groupDebts, groupNet, groupSummary, toBase } from '../logic';
 import { formatMoney } from '../money';
 import type { ScreenProps } from '../navigation';
 import { shareText } from '../share';
@@ -14,10 +14,12 @@ import { useName, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { JoinRequest, Person } from '../types';
 import { TransactionList, type TxItem } from '../transaction-list';
-import { Avatar, Button, Empty, equivalents, List, Pill, rateText, Row, Screen, SectionTitle, styles as ui } from '../ui';
+import { Avatar, Button, ConfirmButton, Empty, equivalents, List, Pill, rateText, Row, Screen, SectionTitle, styles as ui } from '../ui';
+import { useMaybeMoney } from '../pfm/store';
 
 export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>) {
-  const { state, mode, userId, refresh, fresh } = useStore();
+  const money = useMaybeMoney();
+  const { state, dispatch, mode, userId, refresh, fresh } = useStore();
   const nameOf = useName();
   const insets = useSafeAreaInsets();
   const [inviteNote, setInviteNote] = useState<string | null>(null);
@@ -90,6 +92,8 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
   const debts = groupDebts(group, state.expenses, state.payments);
   const myNet = groupNet(group, state.expenses, state.payments)[meId] ?? 0;
   const total = groupSummary(group, state.expenses, state.payments).total;
+  // Settled up in a group with history: you may leave it (shared mode).
+  const leave = mode === 'cloud' ? canLeaveGroup(state, group.id, userId) : null;
 
   type Item =
     | { kind: 'expense'; date: string; id: string; e: (typeof expenses)[number] }
@@ -318,6 +322,25 @@ export default function GroupScreen({ navigation, route }: ScreenProps<'Group'>)
         <TransactionList items={listItems} />
       )}
 
+      {leave?.ok && leave.hasHistory ? (
+        <View style={s.leave}>
+          <Text style={s.leaveNote}>
+            You’re settled up here. Leaving takes it off your list; everyone else keeps its history.
+            {leave.creator && leave.nextOwner ? ` ${leave.nextOwner.name} will look after the group.` : ''}
+          </Text>
+          <ConfirmButton
+            title="Leave group"
+            confirmTitle="Tap again to leave the group"
+            onConfirm={() => {
+              // Money keeps what it counted from the group (it goes from Split).
+              money?.keepHistory({ groupId: group.id });
+              dispatch({ type: 'leaveGroup', id: group.id });
+              navigation.popToTop();
+            }}
+          />
+        </View>
+      ) : null}
+
       <Modal visible={!!approving} transparent animationType="slide" onRequestClose={() => setApproving(null)}>
         <Pressable style={ui.backdrop} onPress={() => setApproving(null)} accessibilityLabel="Close" />
         <View style={[ui.sheet, { paddingBottom: insets.bottom + space.md }]}>
@@ -385,4 +408,6 @@ const s = StyleSheet.create({
   notInvolved: { fontSize: 12, color: colors.muted },
   settled: { alignItems: 'center', marginTop: space.xl, gap: space.sm },
   settledText: { fontSize: 14, color: colors.textSoft },
+  leave: { marginTop: space.xxl, gap: space.sm },
+  leaveNote: { fontSize: 12, color: colors.muted, textAlign: 'center', lineHeight: 17, marginHorizontal: space.md },
 });

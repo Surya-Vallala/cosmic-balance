@@ -2,7 +2,7 @@ import React, { useLayoutEffect, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { resetInviteCode } from '../cloud/api';
 import { isEmail } from '../emails';
-import { groupNet, regularsFirst } from '../logic';
+import { canLeaveGroup, groupNet, regularsFirst } from '../logic';
 import { approxRate, currency, CURRENCY_CODES, parseNumber } from '../money';
 import type { ScreenProps } from '../navigation';
 import { filterFriends } from '../search';
@@ -23,8 +23,10 @@ import {
   styles as ui,
   symbolPrefix,
 } from '../ui';
+import { useMaybeMoney } from '../pfm/store';
 
 export default function GroupFormScreen({ navigation, route }: ScreenProps<'GroupForm'>) {
+  const money = useMaybeMoney();
   const { state, dispatch, mode, userId, refresh, addPersonByEmail } = useStore();
   const [linkNote, setLinkNote] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -135,10 +137,8 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
     setNewFriend('');
   };
 
-  // You can leave a group (shared mode) unless you're in its expenses or payments.
-  const meInUse =
-    groupExpenses.some((e) => meId in e.payers || meId in e.shares) ||
-    groupPayments.some((p) => p.from === meId || p.to === meId);
+  // Shared mode: you can leave once you're settled up here (see canLeaveGroup).
+  const leave = existing ? canLeaveGroup(state, existing.id, userId) : null;
 
   const changeBase = (code: CurrencyCode) => {
     setCurrencyError(null);
@@ -377,23 +377,42 @@ export default function GroupFormScreen({ navigation, route }: ScreenProps<'Grou
         </>
       ) : null}
 
-      {existing && mode === 'cloud' && existing.createdBy !== userId ? (
-        <View style={{ marginTop: space.xl }}>
-          {meInUse ? (
-            <Text style={[ui.hint, { textAlign: 'center', marginBottom: space.sm }]}>
-              You’re in this group’s expenses or payments, so you can’t leave it.
-            </Text>
-          ) : (
+      {existing && mode === 'cloud' && leave ? (
+        <View style={{ marginTop: space.xl, gap: space.sm }}>
+          {leave.ok ? (
             <ConfirmButton
               title="Leave group"
               confirmTitle="Tap again to leave the group"
               onConfirm={() => {
+                // Money keeps what it counted from the group (it goes from Split).
+                money?.keepHistory({ groupId: existing.id });
                 dispatch({ type: 'leaveGroup', id: existing.id });
                 navigation.popToTop();
               }}
             />
+          ) : null}
+          <Text style={[ui.hint, { textAlign: 'center', marginTop: 0 }]}>
+            {leave.ok
+              ? leave.creator && leave.nextOwner
+                ? `${leave.nextOwner.name} will look after the group after you leave. It disappears from your list; everyone else keeps its history.`
+                : 'Leaving takes it off your list. Everyone else keeps its history.'
+              : leave.reason}
+          </Text>
+          {leave.creator ? (
+            <ConfirmButton
+              title="Delete group"
+              confirmTitle="Tap again to delete the group and all its expenses"
+              onConfirm={() => {
+                dispatch({ type: 'deleteGroup', id: existing.id });
+                navigation.popToTop();
+              }}
+            />
+          ) : (
+            <Text style={[ui.hint, { textAlign: 'center', marginTop: 0 }]}>Only the person who created this group can delete it.</Text>
           )}
-          <Text style={[ui.hint, { textAlign: 'center' }]}>Only the person who created this group can delete it.</Text>
+          {leave.creator && hasBalance ? (
+            <Text style={[ui.hint, { textAlign: 'center', marginTop: 0 }]}>Some balances in this group aren’t settled yet.</Text>
+          ) : null}
         </View>
       ) : existing ? (
         <View style={{ marginTop: space.xl }}>

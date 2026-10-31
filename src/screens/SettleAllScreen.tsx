@@ -8,6 +8,7 @@ import { uid, useStore } from '../store';
 import { colors, fonts, space } from '../theme';
 import type { Payment } from '../types';
 import { BalanceTag, Button, Empty, GroupBadge, List, Row, Screen, Segmented, styles as ui } from '../ui';
+import { useSplitMoney } from './money/SplitMoneyLine';
 
 export default function SettleAllScreen({ navigation, route }: ScreenProps<'SettleAll'>) {
   const { state, dispatch } = useStore();
@@ -26,6 +27,28 @@ export default function SettleAllScreen({ navigation, route }: ScreenProps<'Sett
     return plan.total !== 0 || plan.groups.length > 0;
   });
   const [cur, setCur] = useState(route.params.currency ?? currencies[0] ?? 'INR');
+
+  // Money (only you see it): the account the settle-up came into or went from.
+  const planned =
+    friend && currencies.length
+      ? planOverallSettlement(meId, friend.id, cur, state.groups, state.expenses, state.payments, state.transfers).total
+      : 0;
+  const moneyLine = useSplitMoney({
+    linkKey: null,
+    groupId: null,
+    direction: planned > 0 ? 'in' : planned < 0 ? 'out' : null,
+    currency: cur,
+    amount: Math.abs(planned) || null,
+    tip: friend
+      ? {
+          id: 'received-into',
+          text:
+            planned > 0
+              ? `Pick the account ${friend.name}’s money came into. It isn’t counted as income, and ${friend.name} doesn’t see it.`
+              : `Pick the account you paid from. It isn’t counted as spending, and ${friend.name} doesn’t see it.`,
+        }
+      : undefined,
+  });
 
   useLayoutEffect(() => {
     navigation.setOptions({ title: friend ? `Settle up with ${friend.name}` : 'Settle up' });
@@ -89,6 +112,7 @@ export default function SettleAllScreen({ navigation, route }: ScreenProps<'Sett
       settlement: { id: settlementId, kind: 'settlement', from: payer, to: receiver, currency: cur, amount, date: now, createdAt: now },
       payments,
     });
+    if (plan.total !== 0) moneyLine.save(`t:${settlementId}`);
     setDone(true);
   };
 
@@ -159,6 +183,8 @@ export default function SettleAllScreen({ navigation, route }: ScreenProps<'Sett
           ? `No money needs to change hands. Recording this marks every group with ${friend.name} as settled.`
           : `Once ${theyPay ? friend.name + ' pays you' : 'you pay ' + friend.name} ${money(amount)}, record it here. Every group above will then show you and ${friend.name} as settled.`}
       </Text>
+
+      {moneyLine.element}
 
       {!theyPay && plan.total !== 0 && cur === 'INR' && friend.upiId ? (
         <View style={s.panel}>
